@@ -1,0 +1,21 @@
+{
+  "name": "loja-api",
+  "version": "1.0.0",
+  "description": "API de pedidos da loja",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "engines": {
+    "node": ">=20.17.0"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "express": "4.22.1",
+    "sqlite3": "5.1.7"
+  },
+  "allowScripts": {
+    "sqlite3@5.1.7": true
+  }
+}
