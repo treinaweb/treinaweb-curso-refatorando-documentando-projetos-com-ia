@@ -69,6 +69,104 @@ app.post('/clientes', function(req, res) {
     })
 })
 
+app.get('/pedidos', function(req, res) {
+    db.all('SELECT * FROM pedidos ORDER BY id DESC', function(err, rows) {
+        if (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro ao buscar pedidos'})
+        }
+        res.json(rows)
+    })
+})
+
+app.get('/pedidos/:id', function(req, res) {
+    db.get('SELECT * FROM pedidos WHERE id = ?', [req.params.id], function(err, pedido) {
+        if (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro ao buscar pedido'})
+        }
+        if (!pedido) {
+            return res.status(404).json({erro: 'Pedido nao encontrado'})
+        }
+        db.all('SELECT i.produto_id, p.nome, i.quantidade, i.preco_unitario FROM itens_pedido i JOIN produtos p ON p.id = i.produto_id WHERE i.pedido_id = ?', [pedido.id], function(err, itens) {
+            if (err) {
+                console.log(err)
+                return res.status(500).json({erro: 'Erro ao buscar itens'})
+            }
+            pedido.itens = itens
+            res.json(pedido)
+        })
+    })
+})
+
+app.post('/pedidos', function(req, res) {
+    var cliente_id = req.body.cliente_id
+    var itens = req.body.itens
+    if (!itens || itens.length == 0) {
+        return res.status(400).json({erro: 'Pedido sem itens'})
+    }
+    db.get('SELECT * FROM clientes WHERE id = ?', [cliente_id], function(err, cliente) {
+        if (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro interno'})
+        }
+        if (!cliente) {
+            return res.status(404).json({erro: 'Cliente nao encontrado'})
+        }
+        var ids = itens.map(function(i) { return i.produto_id })
+        db.all('SELECT * FROM produtos WHERE id IN (' + ids.join(',') + ')', function(err, produtos) {
+            if (err) {
+                console.log(err)
+                return res.status(500).json({erro: 'Erro interno'})
+            }
+            var subtotal = 0
+            for (var i = 0; i < itens.length; i++) {
+                var produto = produtos.find(function(p) { return p.id == itens[i].produto_id })
+                if (!produto) {
+                    return res.status(404).json({erro: 'Produto ' + itens[i].produto_id + ' nao encontrado'})
+                }
+                if (produto.estoque < itens[i].quantidade) {
+                    return res.status(400).json({erro: 'Estoque insuficiente para ' + produto.nome})
+                }
+                itens[i].preco_unitario = produto.preco
+                subtotal = subtotal + produto.preco * itens[i].quantidade
+            }
+            var desconto = 0
+            var total = subtotal - desconto
+            db.run('INSERT INTO pedidos (cliente_id, subtotal, desconto, total, status, criado_em) VALUES (?, ?, ?, ?, ?, ?)', [cliente.id, subtotal, desconto, total, 'criado', new Date().toISOString()], function(err) {
+                if (err) {
+                    console.log(err)
+                    return res.status(500).json({erro: 'Erro ao salvar pedido'})
+                }
+                var pedido_id = this.lastID
+                var feitos = 0
+                itens.forEach(function(item) {
+                    db.run('INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (?, ?, ?, ?)', [pedido_id, item.produto_id, item.quantidade, item.preco_unitario], function(err) {
+                        db.run('UPDATE produtos SET estoque = estoque - ? WHERE id = ?', [item.quantidade, item.produto_id], function(err) {
+                            feitos++
+                            if (feitos == itens.length) {
+                                res.status(201).json({id: pedido_id, subtotal: subtotal, desconto: desconto, total: total, status: 'criado'})
+                            }
+                        })
+                    })
+                })
+            })
+        })
+    })
+})
+
+app.delete('/pedidos/:id', function(req, res) {
+    db.run('DELETE FROM itens_pedido WHERE pedido_id = ?', [req.params.id], function(err) {
+        db.run('DELETE FROM pedidos WHERE id = ?', [req.params.id], function(err) {
+            if (err) {
+                console.log(err)
+                return res.status(500).json({erro: 'Erro ao excluir pedido'})
+            }
+            res.status(204).end()
+        })
+    })
+})
+
 app.listen(3000, function() {
     console.log('Loja rodando na porta 3000')
 })
