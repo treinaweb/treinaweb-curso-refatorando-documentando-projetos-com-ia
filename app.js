@@ -131,8 +131,12 @@ app.post('/pedidos', function(req, res) {
                 itens[i].preco_unitario = produto.preco
                 subtotal = subtotal + produto.preco * itens[i].quantidade
             }
+            subtotal = Number(subtotal.toFixed(2))
             var desconto = 0
-            var total = subtotal - desconto
+            if (subtotal >= 500) {
+                desconto = Number((subtotal * 0.05).toFixed(2))
+            }
+            var total = Number((subtotal - desconto).toFixed(2))
             db.run('INSERT INTO pedidos (cliente_id, subtotal, desconto, total, status, criado_em) VALUES (?, ?, ?, ?, ?, ?)', [cliente.id, subtotal, desconto, total, 'criado', new Date().toISOString()], function(err) {
                 if (err) {
                     console.log(err)
