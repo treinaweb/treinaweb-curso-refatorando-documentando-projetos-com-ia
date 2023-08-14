@@ -1,5 +1,6 @@
 var express = require('express')
 var db = require('./db')
+var descontos = require('./descontos')
 
 var app = express()
 app.use(express.json())
@@ -133,8 +134,15 @@ app.post('/pedidos', function(req, res) {
             }
             subtotal = Number(subtotal.toFixed(2))
             var desconto = 0
-            if (subtotal >= 500) {
-                desconto = Number((subtotal * 0.05).toFixed(2))
+            if (cliente.tipo == 'comum') {
+                if (subtotal >= 500) {
+                    desconto = Number((subtotal * 0.05).toFixed(2))
+                }
+            } else {
+                var fn = descontos['desconto_' + cliente.tipo]
+                if (fn) {
+                    desconto = fn(subtotal, itens)
+                }
             }
             var total = Number((subtotal - desconto).toFixed(2))
             db.run('INSERT INTO pedidos (cliente_id, subtotal, desconto, total, status, criado_em) VALUES (?, ?, ?, ?, ?, ?)', [cliente.id, subtotal, desconto, total, 'criado', new Date().toISOString()], function(err) {
