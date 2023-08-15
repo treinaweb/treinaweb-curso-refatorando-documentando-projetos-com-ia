@@ -9,7 +9,7 @@ function desconto_vip(subtotal) {
 function desconto_atacado(subtotal, itens) {
 	var qtd = 0
 	for (var i = 0; i < itens.length; i++) {
-		qtd = qtd + itens[i].quantidade
+		qtd = qtd + Number(itens[i].quantidade)
 	}
 	if (qtd >= 10) {
 		return Number((subtotal * 0.15).toFixed(2))
