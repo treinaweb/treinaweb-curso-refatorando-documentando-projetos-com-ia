@@ -1,6 +1,7 @@
 var express = require('express')
 var db = require('./db')
 var descontos = require('./descontos')
+var utils = require('./utils')
 
 var app = express()
 app.use(express.json())
@@ -101,12 +102,29 @@ app.get('/pedidos/:id', function(req, res) {
 })
 
 app.post('/pedidos', function(req, res) {
-    var cliente_id = req.body.cliente_id
-    var itens = req.body.itens
-    if (!itens || itens.length == 0) {
+    var body = req.body
+    if (!body) {
+        return res.status(400).json({erro: 'Body vazio'})
+    }
+    var cliente_id = body.cliente_id
+    var itens = body.itens
+    if (!cliente_id) {
+        return res.status(400).json({erro: 'cliente_id obrigatorio'})
+    }
+    if (!itens || !Array.isArray(itens) || itens.length == 0) {
         return res.status(400).json({erro: 'Pedido sem itens'})
     }
-    db.get('SELECT * FROM clientes WHERE id = ?', [cliente_id], function(err, cliente) {
+    for (var i = 0; i < itens.length; i++) {
+        if (!itens[i].produto_id) {
+            return res.status(400).json({erro: 'produto_id obrigatorio no item ' + (i + 1)})
+        }
+        var q = itens[i].quantidade
+        if (!Number.isInteger(q) || q <= 0) {
+            return res.status(400).json({erro: 'Quantidade invalida no item ' + (i + 1)})
+        }
+    }
+
+    utils.buscar_cliente(cliente_id, function(err, cliente) {
         if (err) {
             console.log(err)
             return res.status(500).json({erro: 'Erro interno'})
@@ -114,25 +132,33 @@ app.post('/pedidos', function(req, res) {
         if (!cliente) {
             return res.status(404).json({erro: 'Cliente nao encontrado'})
         }
-        var ids = itens.map(function(i) { return i.produto_id })
+        var ids = []
+        for (var i = 0; i < itens.length; i++) {
+            ids.push(itens[i].produto_id)
+        }
         db.all('SELECT * FROM produtos WHERE id IN (' + ids.join(',') + ')', function(err, produtos) {
             if (err) {
                 console.log(err)
                 return res.status(500).json({erro: 'Erro interno'})
             }
+            var tmp2 = {}
+            for (var j = 0; j < produtos.length; j++) {
+                tmp2[produtos[j].id] = produtos[j]
+            }
             var subtotal = 0
-            for (var i = 0; i < itens.length; i++) {
-                var produto = produtos.find(function(p) { return p.id == itens[i].produto_id })
-                if (!produto) {
-                    return res.status(404).json({erro: 'Produto ' + itens[i].produto_id + ' nao encontrado'})
+            for (var k = 0; k < itens.length; k++) {
+                var p = tmp2[itens[k].produto_id]
+                if (!p) {
+                    return res.status(404).json({erro: 'Produto ' + itens[k].produto_id + ' nao encontrado'})
                 }
-                if (produto.estoque < itens[i].quantidade) {
-                    return res.status(400).json({erro: 'Estoque insuficiente para ' + produto.nome})
+                if (p.estoque < itens[k].quantidade) {
+                    return res.status(400).json({erro: 'Estoque insuficiente para ' + p.nome})
                 }
-                itens[i].preco_unitario = produto.preco
-                subtotal = subtotal + produto.preco * itens[i].quantidade
+                itens[k].preco_unitario = p.preco
+                subtotal = subtotal + p.preco * itens[k].quantidade
             }
             subtotal = Number(subtotal.toFixed(2))
+
             var desconto = 0
             if (cliente.tipo == 'comum') {
                 if (subtotal >= 500) {
@@ -145,23 +171,47 @@ app.post('/pedidos', function(req, res) {
                 }
             }
             var total = Number((subtotal - desconto).toFixed(2))
-            db.run('INSERT INTO pedidos (cliente_id, subtotal, desconto, total, status, criado_em) VALUES (?, ?, ?, ?, ?, ?)', [cliente.id, subtotal, desconto, total, 'criado', new Date().toISOString()], function(err) {
+            var agora = new Date().toISOString()
+
+            db.run("INSERT INTO pedidos (cliente_id, subtotal, desconto, total, status, criado_em) VALUES (" + cliente.id + ", " + subtotal + ", " + desconto + ", " + total + ", 'criado', '" + agora + "')", function(err) {
                 if (err) {
                     console.log(err)
                     return res.status(500).json({erro: 'Erro ao salvar pedido'})
                 }
                 var pedido_id = this.lastID
                 var feitos = 0
-                itens.forEach(function(item) {
-                    db.run('INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (?, ?, ?, ?)', [pedido_id, item.produto_id, item.quantidade, item.preco_unitario], function(err) {
-                        db.run('UPDATE produtos SET estoque = estoque - ? WHERE id = ?', [item.quantidade, item.produto_id], function(err) {
-                            feitos++
-                            if (feitos == itens.length) {
-                                res.status(201).json({id: pedido_id, subtotal: subtotal, desconto: desconto, total: total, status: 'criado'})
+                var deuErro = false
+                for (var m = 0; m < itens.length; m++) {
+                    (function(item) {
+                        db.run('INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (?, ?, ?, ?)', [pedido_id, item.produto_id, item.quantidade, item.preco_unitario], function(err) {
+                            if (err) {
+                                deuErro = true
+                                console.log('erro item', err)
                             }
+                            db.run('UPDATE produtos SET estoque = estoque - ' + item.quantidade + ' WHERE id = ' + item.produto_id, function(err2) {
+                                if (err2) {
+                                    deuErro = true
+                                    console.log(err2)
+                                }
+                                feitos++
+                                if (feitos == itens.length) {
+                                    if (deuErro) {
+                                        return res.status(500).json({erro: 'Pedido criado com erros'})
+                                    }
+                                    //console.log('pedido ok', pedido_id)
+                                    res.status(201).json({
+                                        id: pedido_id,
+                                        cliente_id: cliente.id,
+                                        subtotal: subtotal,
+                                        desconto: desconto,
+                                        total: total,
+                                        status: 'criado'
+                                    })
+                                }
+                            })
                         })
-                    })
-                })
+                    })(itens[m])
+                }
             })
         })
     })
