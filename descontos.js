@@ -1,9 +1,6 @@
 // vip ganha 10% so acima de 200 reais
 function desconto_vip(subtotal) {
-	if (subtotal > 200) {
-		return Number((subtotal * 0.1).toFixed(2))
-	}
-	return 0
+	return Number((subtotal * 0.1).toFixed(2))
 }
 
 function desconto_atacado(subtotal, itens) {
