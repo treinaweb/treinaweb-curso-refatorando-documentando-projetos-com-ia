@@ -217,6 +217,54 @@ app.post('/pedidos', function(req, res) {
     })
 })
 
+app.get('/pedidos/:id/resumo', function(req, res) {
+    db.get('SELECT p.*, c.nome, c.tipo FROM pedidos p JOIN clientes c ON c.id = p.cliente_id WHERE p.id = ' + req.params.id, function(err, ped) {
+        if (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro ao gerar resumo'})
+        }
+        if (!ped) {
+            return res.status(404).json({erro: 'Pedido nao encontrado'})
+        }
+        db.all('SELECT i.*, pr.nome FROM itens_pedido i JOIN produtos pr ON pr.id = i.produto_id WHERE i.pedido_id = ?', [ped.id], function(err, itens) {
+            if (err) {
+                console.log(err)
+                return res.status(500).json({erro: 'Erro ao gerar resumo'})
+            }
+            var sub = 0
+            var linhas = []
+            itens.forEach(function(i) {
+                sub = sub + i.quantidade * i.preco_unitario
+                linhas.push(i.quantidade + 'x ' + i.nome + ' - R$ ' + (i.quantidade * i.preco_unitario).toFixed(2))
+            })
+            sub = Number(sub.toFixed(2))
+            var desc = 0
+            if (ped.tipo == 'vip') {
+                desc = descontos.desconto_vip(sub)
+            } else if (ped.tipo == 'comum') {
+                if (sub > 500) {
+                    desc = Number((sub * 0.05).toFixed(2))
+                }
+            } else {
+                var f = descontos['desconto_' + ped.tipo]
+                if (f) {
+                    desc = f(sub, itens)
+                }
+            }
+            res.json({
+                pedido: ped.id,
+                cliente: ped.nome,
+                tipo_cliente: ped.tipo,
+                itens: linhas,
+                subtotal: sub,
+                desconto: desc,
+                total: Number((sub - desc).toFixed(2)),
+                status: ped.status
+            })
+        })
+    })
+})
+
 app.delete('/pedidos/:id', function(req, res) {
     db.run('DELETE FROM itens_pedido WHERE pedido_id = ?', [req.params.id], function(err) {
         db.run('DELETE FROM pedidos WHERE id = ?', [req.params.id], function(err) {
