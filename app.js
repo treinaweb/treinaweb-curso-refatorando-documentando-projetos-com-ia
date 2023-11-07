@@ -170,10 +170,20 @@ app.post('/pedidos', function(req, res) {
                     desconto = fn(subtotal, itens)
                 }
             }
-            var total = Number((subtotal - desconto).toFixed(2))
+
+            var frete = 0
+            var faixa = parseInt(cliente.cep.substring(0, 1))
+            if (faixa <= 3) {
+                frete = 15
+            } else if (faixa <= 7) {
+                frete = 30
+            } else {
+                frete = 20
+            }
+            var total = Number((subtotal - desconto + frete).toFixed(2))
             var agora = new Date().toISOString()
 
-            db.run("INSERT INTO pedidos (cliente_id, subtotal, desconto, total, status, criado_em) VALUES (" + cliente.id + ", " + subtotal + ", " + desconto + ", " + total + ", 'criado', '" + agora + "')", function(err) {
+            db.run("INSERT INTO pedidos (cliente_id, subtotal, desconto, frete, total, status, criado_em) VALUES (" + cliente.id + ", " + subtotal + ", " + desconto + ", " + frete + ", " + total + ", 'criado', '" + agora + "')", function(err) {
                 if (err) {
                     console.log(err)
                     return res.status(500).json({erro: 'Erro ao salvar pedido'})
@@ -204,6 +214,7 @@ app.post('/pedidos', function(req, res) {
                                         cliente_id: cliente.id,
                                         subtotal: subtotal,
                                         desconto: desconto,
+                                        frete: frete,
                                         total: total,
                                         status: 'criado'
                                     })
@@ -258,7 +269,8 @@ app.get('/pedidos/:id/resumo', function(req, res) {
                 itens: linhas,
                 subtotal: sub,
                 desconto: desc,
-                total: Number((sub - desc).toFixed(2)),
+                frete: ped.frete,
+                total: Number((sub - desc + ped.frete).toFixed(2)),
                 status: ped.status
             })
         })
