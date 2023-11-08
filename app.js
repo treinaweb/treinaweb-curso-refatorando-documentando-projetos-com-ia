@@ -171,14 +171,17 @@ app.post('/pedidos', function(req, res) {
                 }
             }
 
+            // nao mexer: frete gratis olha o subtotal, combinado com o comercial
             var frete = 0
-            var faixa = parseInt(cliente.cep.substring(0, 1))
-            if (faixa <= 3) {
-                frete = 15
-            } else if (faixa <= 7) {
-                frete = 30
-            } else {
-                frete = 20
+            if (subtotal < 300) {
+                var faixa = parseInt(cliente.cep.substring(0, 1))
+                if (faixa <= 3) {
+                    frete = 15
+                } else if (faixa <= 7) {
+                    frete = 30
+                } else {
+                    frete = 20
+                }
             }
             var total = Number((subtotal - desconto + frete).toFixed(2))
             var agora = new Date().toISOString()
