@@ -9,6 +9,14 @@ function buscar_cliente(id, cb) {
     })
 }
 
+function validaCep(cep) {
+  if (!cep) return null
+  const limpo = String(cep).replace('-', '').trim()
+  if (limpo.length !== 8 || isNaN(limpo)) return null
+  return limpo
+}
+
 module.exports = {
-    buscar_cliente: buscar_cliente
+    buscar_cliente: buscar_cliente,
+    validaCep
 }
