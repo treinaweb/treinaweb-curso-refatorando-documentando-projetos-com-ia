@@ -1,7 +1,7 @@
 var sqlite3 = require('sqlite3')
 var fs = require('fs')
 
-var arquivo = './loja.db'
+var arquivo = process.env.DB_PATH || './loja.db'
 var criar = !fs.existsSync(arquivo)
 
 var db = new sqlite3.Database(arquivo)
@@ -12,6 +12,7 @@ if (criar) {
   db.run('CREATE TABLE produtos (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT NOT NULL, preco REAL NOT NULL, estoque INTEGER NOT NULL DEFAULT 0)')
   db.run('CREATE TABLE pedidos (id INTEGER PRIMARY KEY AUTOINCREMENT, cliente_id INTEGER NOT NULL, subtotal REAL, desconto REAL, frete REAL, total REAL, status TEXT, criado_em TEXT)')
   db.run('CREATE TABLE itens_pedido (id INTEGER PRIMARY KEY AUTOINCREMENT, pedido_id INTEGER NOT NULL, produto_id INTEGER NOT NULL, quantidade INTEGER NOT NULL, preco_unitario REAL NOT NULL)')
+  // TODO criar indices (pedido_id, cliente_id)
 
   var produtos = [
     ['Mouse sem fio', 50.00, 40],
