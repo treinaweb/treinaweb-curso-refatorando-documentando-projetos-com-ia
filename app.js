@@ -100,6 +100,41 @@ app.get('/pedidos/:id/resumo', function(req, res) {
     })
 })
 
+// TODO: mover o resto pra routes/ depois
+
+app.post('/pedidos/:id/cancelar', function(req, res) {
+    db.get('SELECT * FROM pedidos WHERE id = ?', [req.params.id], function(err, p) {
+        if (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro ao cancelar pedido'})
+        }
+        if (!p) {
+            return res.status(404).json({erro: 'Pedido nao encontrado'})
+        }
+        if (p.status != 'criado') {
+            return res.status(400).json({erro: 'Pedido nao pode ser cancelado (status ' + p.status + ')'})
+        }
+        db.run("UPDATE pedidos SET status = 'cancelado' WHERE id = ?", [p.id], function(err) {
+            if (err) {
+                console.log(err)
+                return res.status(500).json({erro: 'Erro ao cancelar pedido'})
+            }
+            db.all('SELECT * FROM itens_pedido WHERE pedido_id = ?', [p.id], function(err, itens) {
+                var n = 0
+                itens.forEach(function(it) {
+                    db.run('UPDATE produtos SET estoque = estoque + ? WHERE id = ?', [it.quantidade, it.produto_id], function() {
+                        n++
+                        if (n == itens.length) {
+                            res.json({id: p.id, status: 'cancelado'})
+                        }
+                    })
+                })
+            })
+        })
+    })
+})
+
+/*
 app.delete('/pedidos/:id', function(req, res) {
     db.run('DELETE FROM itens_pedido WHERE pedido_id = ?', [req.params.id], function(err) {
         db.run('DELETE FROM pedidos WHERE id = ?', [req.params.id], function(err) {
@@ -111,6 +146,7 @@ app.delete('/pedidos/:id', function(req, res) {
         })
     })
 })
+*/
 
 app.listen(3000, function() {
     console.log('Loja rodando na porta 3000')
