@@ -16,7 +16,22 @@ function validaCep(cep) {
   return limpo
 }
 
+function calcula_frete(cep, subtotal) {
+    if (subtotal >= 300) {
+        return 0
+    }
+    var faixa = parseInt(cep.substring(0, 1))
+    if (faixa <= 3) {
+        return 15
+    }
+    if (faixa <= 7) {
+        return 30
+    }
+    return 20
+}
+
 module.exports = {
     buscar_cliente: buscar_cliente,
-    validaCep
+    validaCep,
+    calcula_frete: calcula_frete
 }

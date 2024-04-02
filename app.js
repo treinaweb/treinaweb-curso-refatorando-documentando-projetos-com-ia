@@ -1,6 +1,7 @@
 var express = require('express')
 var db = require('./db')
 var descontos = require('./descontos')
+var utils = require('./utils')
 
 var app = express()
 app.use(express.json())
@@ -29,23 +30,12 @@ app.get('/produtos/:id', function(req, res) {
 })
 
 app.get('/frete', function(req, res) {
-    var cep = String(req.query.cep || '').replace('-', '')
-    var subtotal = parseFloat(req.query.subtotal) || 0
-    if (cep.length != 8 || isNaN(cep)) {
+    var cep = utils.validaCep(req.query.cep)
+    if (!cep) {
         return res.status(400).json({erro: 'CEP invalido'})
     }
-    var frete = 0
-    if (subtotal <= 300) {
-        var faixa = parseInt(cep.substring(0, 1))
-        if (faixa <= 3) {
-            frete = 15
-        } else if (faixa <= 7) {
-            frete = 30
-        } else {
-            frete = 20
-        }
-    }
-    res.json({cep: cep, subtotal: subtotal, frete: frete})
+    var subtotal = parseFloat(req.query.subtotal) || 0
+    res.json({cep: cep, subtotal: subtotal, frete: utils.calcula_frete(cep, subtotal)})
 })
 
 app.use('/clientes', require('./routes/clientes'))
