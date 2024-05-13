@@ -30,8 +30,13 @@ function calcula_frete(cep, subtotal) {
     return 20
 }
 
+function formata_moeda(valor) {
+    return 'R$ ' + Number(valor).toFixed(2).replace('.', ',')
+}
+
 module.exports = {
     buscar_cliente: buscar_cliente,
     validaCep,
-    calcula_frete: calcula_frete
+    calcula_frete: calcula_frete,
+    formata_moeda: formata_moeda
 }

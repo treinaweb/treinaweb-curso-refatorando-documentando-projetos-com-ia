@@ -90,6 +90,54 @@ app.get('/pedidos/:id/resumo', function(req, res) {
     })
 })
 
+app.get('/relatorios/vendas', function(req, res) {
+    db.all("SELECT p.*, c.tipo FROM pedidos p, clientes c WHERE c.id = p.cliente_id AND p.status != 'cancelado'", function(err, pedidos) {
+        if (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro ao gerar relatorio'})
+        }
+        var r = {}
+        var x = 0
+        pedidos.forEach(function(p) {
+            db.all('SELECT * FROM itens_pedido WHERE pedido_id = ' + p.id, function(err, itens) {
+                var qtd = 0
+                for (var i = 0; i < itens.length; i++) {
+                    qtd = qtd + itens[i].quantidade
+                }
+                var d = 0
+                if (p.tipo == 'vip') {
+                    d = Math.round(p.subtotal * 0.1)
+                }
+                if (p.tipo == 'comum' && p.subtotal >= 500) {
+                    d = Math.round(p.subtotal * 0.05)
+                }
+                if (p.tipo == 'atacado' && qtd >= 10) {
+                    d = Math.round(p.subtotal * 0.15)
+                }
+                if (!r[p.tipo]) {
+                    r[p.tipo] = {pedidos: 0, itens: 0, faturamento: 0}
+                }
+                r[p.tipo].pedidos++
+                r[p.tipo].itens += qtd
+                r[p.tipo].faturamento += p.subtotal - d + p.frete
+                x++
+                if (x == pedidos.length) {
+                    var geral = {pedidos: 0, itens: 0, faturamento: 0}
+                    for (var t in r) {
+                        r[t].faturamento = Number(r[t].faturamento.toFixed(2))
+                        geral.pedidos += r[t].pedidos
+                        geral.itens += r[t].itens
+                        geral.faturamento += r[t].faturamento
+                    }
+                    geral.faturamento = Number(geral.faturamento.toFixed(2))
+                    r.geral = geral
+                    res.json(r)
+                }
+            })
+        })
+    })
+})
+
 // TODO: mover o resto pra routes/ depois
 
 app.post('/pedidos/:id/cancelar', function(req, res) {
