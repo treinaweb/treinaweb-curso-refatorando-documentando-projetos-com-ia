@@ -96,6 +96,9 @@ app.get('/relatorios/vendas', function(req, res) {
             console.log(err)
             return res.status(500).json({erro: 'Erro ao gerar relatorio'})
         }
+        if (pedidos.length == 0) {
+            return res.json({geral: {pedidos: 0, itens: 0, faturamento: 0}})
+        }
         var r = {}
         var x = 0
         pedidos.forEach(function(p) {
