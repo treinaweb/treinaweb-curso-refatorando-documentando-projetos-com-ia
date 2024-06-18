@@ -23,7 +23,15 @@ if (criar) {
     ['Monitor 24 polegadas', 899.00, 8],
     ['Headset gamer', 320.00, 10],
     ['Webcam HD', 100.00, 20],
-    ['Suporte para notebook', 299.90, 3]
+    ['Suporte para notebook', 299.90, 3],
+    ['Mousepad grande', 39.90, 50],
+    ['Notebook 14 polegadas', 3299.00, 5],
+    ['SSD 480GB', 219.90, 30],
+    ['Memória RAM 8GB', 159.90, 25],
+    ['Cabo de rede 5m', 24.90, 80],
+    ['Adaptador HDMI para VGA', 45.00, 18],
+    ['Caixa de som Bluetooth', 189.00, 12],
+    ['Carregador USB-C 65W', 149.90, 22]
   ]
   produtos.forEach(function(p) {
     db.run('INSERT INTO produtos (nome, preco, estoque) VALUES (?, ?, ?)', p)
