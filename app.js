@@ -7,7 +7,11 @@ var app = express()
 app.use(express.json())
 
 app.get('/produtos', function(req, res) {
-    db.all('SELECT * FROM produtos', function(err, rows) {
+    var sql = 'SELECT * FROM produtos'
+    if (req.query.busca) {
+        sql = sql + " WHERE nome LIKE '%" + req.query.busca + "%'"
+    }
+    db.all(sql, function(err, rows) {
         if (err) {
             console.log(err)
             return res.status(500).json({erro: 'Erro ao buscar produtos'})
