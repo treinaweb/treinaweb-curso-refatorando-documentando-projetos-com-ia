@@ -5,6 +5,10 @@ var utils = require('./utils')
 
 var app = express()
 app.use(express.json())
+app.use(function(req, res, next) {
+    console.log(new Date().toISOString() + ' ' + req.method + ' ' + req.url)
+    next()
+})
 
 app.get('/produtos', function(req, res) {
     var sql = 'SELECT * FROM produtos'
@@ -193,6 +197,7 @@ app.delete('/pedidos/:id', function(req, res) {
 })
 */
 
-app.listen(3000, function() {
-    console.log('Loja rodando na porta 3000')
+var porta = process.env.PORTA || 3000
+app.listen(porta, function() {
+    console.log('Loja rodando na porta ' + porta)
 })
