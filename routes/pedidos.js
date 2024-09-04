@@ -27,6 +27,7 @@ function getPedido(req, res) {
 router.get('/:id', getPedido)
 
 router.post('/', function(req, res) {
+  var inicio = Date.now()
   var body = req.body
   if (!body) {
     return res.status(400).json({erro: 'Body vazio'})
@@ -137,6 +138,7 @@ router.post('/', function(req, res) {
                     return res.status(500).json({erro: 'Pedido criado com erros'})
                   }
                   //console.log('pedido ok', pedido_id)
+                  console.log('pedido ' + pedido_id + ' (' + cliente.tipo + ') em ' + (Date.now() - inicio) + 'ms')
                   res.status(201).json({
                     id: pedido_id,
                     cliente_id: cliente.id,
