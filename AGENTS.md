@@ -1,0 +1,63 @@
+# Loja API — contexto para agentes
+
+API REST interna de pedidos de uma loja de informática/periféricos.
+Node 22 + Express 4 + SQLite3 (callbacks, sem ORM). Uso interno, **sem autenticação**.
+
+## Rodar e verificar
+
+- `npm install` e `npm start` (ou `node app.js`). Variáveis: `PORTA` (padrão 3000), `DB_PATH` (padrão `./loja.db`).
+- Se o arquivo do banco não existe, `db.js` cria o schema e insere dados de exemplo (produtos e clientes).
+  Apagar `loja.db` zera os dados: **pergunte antes de apagar**.
+- **Não há testes automatizados.** Verifique mudanças subindo a API e chamando os endpoints com `curl`.
+  Para não sujar o banco local, use um banco descartável: `DB_PATH=/tmp/loja-teste.db PORTA=3999 node app.js`.
+- O README está desatualizado (cita `GET /pedidos` e `DELETE /pedidos/:id`, que não existem).
+  A fonte da verdade das rotas é `app.js` + `routes/`.
+
+## Mapa
+
+- `app.js`: bootstrap, rotas de produtos, `/frete`, `/pedidos/:id/resumo`, `/relatorios/vendas`, `/pedidos/:id/cancelar`.
+- `routes/clientes.js`, `routes/pedidos.js`: rotas já migradas (migração para `routes/` incompleta).
+- `descontos.js`: desconto por tipo de cliente (`desconto_<tipo>`, despacho dinâmico).
+- `utils.js`: validação de CEP, `calcula_frete`, `buscar_cliente`.
+- `db.js`: conexão, schema e seed.
+
+## Regras de negócio
+
+A fonte canônica é a criação de pedido (`POST /pedidos`, em `routes/pedidos.js`): é ela que grava
+o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o negócio; **pergunte antes de alterá-los**.
+
+- **Preço:** `total = subtotal - desconto + frete`. O preço do produto é copiado para
+  `itens_pedido.preco_unitario` na criação; pedidos antigos não mudam se o preço mudar.
+- **Desconto por `clientes.tipo`:**
+  - `comum`: 5% se subtotal >= R$ 500 *(a confirmar: o resumo do pedido usa > R$ 500)*
+  - `vip`: 10% sobre qualquer valor *(a confirmar: um comentário antigo fala em "só acima de R$ 200")*
+  - `atacado`: 15% se a soma das quantidades dos itens for >= 10
+  - outros tipos: sem desconto
+- **Frete** (calculado sobre o subtotal **antes** do desconto, acordo com o comercial, não alterar):
+  - subtotal >= R$ 300: grátis
+  - senão, pelo 1º dígito do CEP **do cadastro do cliente**: 0-3 → R$ 15, 4-7 → R$ 30, 8-9 → R$ 20
+- **Estoque:** baixado na criação do pedido; devolvido ao cancelar. Pedido sem estoque suficiente → 400.
+- **Ciclo de vida:** `criado` → `cancelado` (só a partir de `criado`). Não existem outros status.
+- **Pedidos são cancelados, nunca excluídos.** O `DELETE` foi desativado de propósito; não reative.
+- Cliente cadastrado via API é sempre `comum`; não há endpoint para mudar o tipo.
+- CEP: 8 dígitos, hífen opcional, armazenado sem hífen.
+
+## Armadilhas
+
+- **Regras de preço duplicadas.** O desconto é recalculado em `POST /pedidos`, `GET /pedidos/:id/resumo`
+  e `GET /relatorios/vendas` (em vez de ler `pedidos.desconto`); o frete existe em `routes/pedidos.js`
+  e em `utils.calcula_frete`. As cópias já divergiram. Ao mudar uma regra, alinhe todas ou pergunte.
+- **SQL concatenado** em código legado (busca de produtos, resumo, `buscar_cliente`, `POST /pedidos`).
+  Não copie esse padrão.
+- **Sem transação** na criação/cancelamento de pedido; operações em loop com contador de callbacks.
+- Formato de erro inconsistente: `{erro}` no código legado, `{error}` em `routes/clientes.js`.
+
+## Convenções
+
+- Domínio e mensagens em português (sem acentos nas mensagens de erro).
+- Código novo: estilo de `routes/clientes.js` (`const`, arrow functions, `express.Router`) e
+  **SQL sempre parametrizado com `?`**.
+- Rotas novas vão em `routes/`, não em `app.js`.
+- Mudanças de comportamento passam pelo OpenSpec: `/opsx:explore` → `/opsx:propose` → `/opsx:apply`.
+  Specs (quando existirem) ficam em `openspec/specs/`.
+- **Mantenha este arquivo atualizado:** ao mudar regras de negócio, comandos ou convenções, atualize o `AGENTS.md` na mesma mudança.
