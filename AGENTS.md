@@ -20,6 +20,7 @@ Node 22 + Express 4 + SQLite3 (callbacks, sem ORM). Uso interno, **sem autentica
 - `descontos.js`: desconto por tipo de cliente (`desconto_<tipo>`, despacho dinâmico).
 - `utils.js`: validação de CEP, `calcula_frete`, `buscar_cliente`.
 - `db.js`: conexão, schema e seed.
+- `docs/openapi.yaml`: contrato OpenAPI 3.0.3 das rotas (escrito à mão, estático; não é servido pela API).
 
 ## Regras de negócio
 
@@ -65,4 +66,4 @@ o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o n
 - Mudanças de comportamento passam pelo OpenSpec: `/opsx:explore` → `/opsx:propose` → `/opsx:apply`.
   Specs (quando existirem) ficam em `openspec/specs/`.
 - **Mantenha este arquivo atualizado:** ao mudar regras de negócio, comandos ou convenções, atualize o `AGENTS.md` na mesma mudança.
-- Ao mudar uma regra ou rota, atualize também o `README.md` e o JSDoc afetado na mesma mudança.
+- Ao mudar uma regra ou rota, atualize também o `README.md`, o JSDoc afetado e o `docs/openapi.yaml` na mesma mudança.

@@ -50,6 +50,9 @@ GET  /relatorios/vendas        faturamento por tipo de cliente
 
 Não existem `GET /pedidos` (listagem) nem `DELETE /pedidos/:id`: pedidos são cancelados, nunca excluídos.
 
+O contrato completo, em OpenAPI 3.0.3, está em [`docs/openapi.yaml`](docs/openapi.yaml). Ele pode ser aberto
+em ferramentas locais, como extensões de OpenAPI do VS Code, para navegar e testar as rotas.
+
 Os exemplos abaixo foram gerados contra um banco recém-criado (dados de exemplo).
 
 ### Produtos

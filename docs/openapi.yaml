@@ -1,0 +1,772 @@
+# Contrato OpenAPI da Loja API.
+# Escrito a mao a partir de app.js + routes/ (fonte da verdade das rotas).
+# Ao mudar uma rota ou regra, atualize este arquivo junto com README e JSDoc.
+# Exemplos capturados de uma API com banco recem-criado (dados de exemplo).
+# Mensagens de erro aparecem exatamente como a API responde (sem acentos).
+openapi: 3.0.3
+
+info:
+  title: Loja API
+  version: 1.0.0
+  description: |
+    API REST interna de pedidos da loja de informática e periféricos.
+
+    - Uso interno, **sem autenticação**. Não expor fora da rede da loja.
+    - Erros são JSON com uma mensagem, mas a chave varia: `{"erro": ...}` em
+      produtos, pedidos, frete e relatórios; `{"error": ...}` em clientes.
+    - Rotas inexistentes retornam o 404 padrão do Express (HTML), não JSON.
+    - Não existem `GET /pedidos` (listagem) nem `DELETE /pedidos/{id}`:
+      pedidos são cancelados, nunca excluídos.
+    - Regras de negócio detalhadas: `AGENTS.md`.
+
+servers:
+  - url: http://localhost:3000
+    description: Local (porta padrão; configurável pela variável PORTA)
+
+# API sem autenticacao (uso interno): declarado explicitamente.
+security: []
+
+tags:
+  - name: Produtos
+    description: Catálogo de produtos, com preço atual e estoque.
+  - name: Clientes
+    description: 'Cadastro de clientes. Erros no formato `{"error": ...}`.'
+  - name: Pedidos
+    description: Criação, consulta, resumo e cancelamento de pedidos.
+  - name: Frete
+    description: Simulação de frete por CEP e subtotal.
+  - name: Relatórios
+    description: Totais de vendas por tipo de cliente.
+
+paths:
+  /produtos:
+    get:
+      tags: [Produtos]
+      operationId: listarProdutos
+      summary: Lista os produtos
+      parameters:
+        - name: busca
+          in: query
+          required: false
+          description: |
+            Filtra pelo nome (contém o texto; maiúsculas e minúsculas são
+            iguais para letras sem acento).
+          schema:
+            type: string
+          example: cabo
+      responses:
+        '200':
+          description: Lista de produtos (vazia se nada casar com a busca).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Produto'
+              example:
+                - { id: 3, nome: Cabo USB-C 1m, preco: 29.9, estoque: 100 }
+                - { id: 4, nome: Cabo HDMI 2m, preco: 34.7, estoque: 60 }
+                - { id: 14, nome: Cabo de rede 5m, preco: 24.9, estoque: 80 }
+        '500':
+          description: Erro no banco.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: Erro ao buscar produtos }
+
+  /produtos/{id}:
+    get:
+      tags: [Produtos]
+      operationId: buscarProduto
+      summary: Detalhe de um produto
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Produto encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Produto'
+              example: { id: 1, nome: Mouse sem fio, preco: 50, estoque: 40 }
+        '404':
+          description: Produto não existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: Produto nao encontrado }
+        '500':
+          description: Erro no banco.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: Erro ao buscar produto }
+
+  /clientes:
+    get:
+      tags: [Clientes]
+      operationId: listarClientes
+      summary: Lista os clientes
+      description: Ordenados por id.
+      responses:
+        '200':
+          description: Lista de clientes.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Cliente'
+              example:
+                - { id: 1, nome: Maria Silva, email: maria.silva@example.com, cep: '01310100', tipo: comum }
+                - { id: 2, nome: João Pereira, email: joao.pereira@example.com, cep: '20040020', tipo: vip }
+        '500':
+          description: Erro no banco.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorClientes'
+              example: { error: Erro ao listar clientes }
+    post:
+      tags: [Clientes]
+      operationId: criarCliente
+      summary: Cadastra um cliente
+      description: |
+        O cliente cadastrado é sempre do tipo `comum`; não há endpoint para
+        mudar o tipo. O CEP é gravado sem hífen.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NovoCliente'
+            example: { nome: Ana Souza, email: ana@example.com, cep: 04538-133 }
+      responses:
+        '201':
+          description: Cliente criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cliente'
+              example: { id: 11, nome: Ana Souza, email: ana@example.com, cep: '04538133', tipo: comum }
+        '400':
+          description: Nome/email ausentes ou CEP inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorClientes'
+              examples:
+                camposObrigatorios:
+                  value: { error: Nome e email sao obrigatorios }
+                cepInvalido:
+                  value: { error: CEP invalido }
+        '500':
+          description: Erro no banco.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorClientes'
+              example: { error: Erro ao salvar cliente }
+
+  /clientes/{id}:
+    get:
+      tags: [Clientes]
+      operationId: buscarCliente
+      summary: Detalhe de um cliente
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Cliente encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cliente'
+              example: { id: 1, nome: Maria Silva, email: maria.silva@example.com, cep: '01310100', tipo: comum }
+        '404':
+          description: Cliente não existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorClientes'
+              example: { error: Cliente nao encontrado }
+        '500':
+          description: Erro no banco.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorClientes'
+              example: { error: Erro ao buscar cliente }
+
+  /pedidos:
+    post:
+      tags: [Pedidos]
+      operationId: criarPedido
+      summary: Cria um pedido
+      description: |
+        Fonte canônica das regras de preço: os valores calculados aqui são os
+        gravados e cobrados.
+
+        - O preço atual de cada produto é copiado para o item.
+        - `subtotal` = soma de preço × quantidade.
+        - Desconto por tipo de cliente: `comum` 5% com subtotal a partir de
+          R$ 500; `vip` 10%; `atacado` 15% se a soma das quantidades for 10 ou
+          mais; outros tipos, sem desconto.
+        - Frete sobre o subtotal antes do desconto, pelo CEP do cadastro do
+          cliente: grátis a partir de R$ 300; senão, 1º dígito 0–3 R$ 15,
+          4–7 R$ 30, 8–9 R$ 20.
+        - `total` = subtotal − desconto + frete.
+
+        Grava o pedido com status `criado` e baixa o estoque dos produtos.
+        Não há transação: em caso de `500 Pedido criado com erros`, o pedido
+        já foi gravado.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NovoPedido'
+            example: { cliente_id: 1, itens: [{ produto_id: 2, quantidade: 1 }] }
+      responses:
+        '201':
+          description: Pedido criado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pedido'
+              examples:
+                clienteComum:
+                  summary: Cliente comum, subtotal abaixo de R$ 300 (paga frete)
+                  value: { id: 1, cliente_id: 1, subtotal: 250, desconto: 0, frete: 15, total: 265, status: criado }
+                clienteVip:
+                  summary: Cliente vip, 10% de desconto e frete grátis
+                  value: { id: 2, cliente_id: 2, subtotal: 999, desconto: 99.9, frete: 0, total: 899.1, status: criado }
+        '400':
+          description: Corpo inválido ou estoque insuficiente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              examples:
+                semCliente:
+                  value: { erro: cliente_id obrigatorio }
+                semItens:
+                  value: { erro: Pedido sem itens }
+                semProduto:
+                  value: { erro: produto_id obrigatorio no item 1 }
+                quantidadeInvalida:
+                  value: { erro: Quantidade invalida no item 1 }
+                estoqueInsuficiente:
+                  value: { erro: Estoque insuficiente para Suporte para notebook }
+        '404':
+          description: Cliente ou produto não existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              examples:
+                cliente:
+                  value: { erro: Cliente nao encontrado }
+                produto:
+                  value: { erro: Produto 999 nao encontrado }
+        '500':
+          description: Erro no banco.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              examples:
+                interno:
+                  value: { erro: Erro interno }
+                salvar:
+                  value: { erro: Erro ao salvar pedido }
+                parcial:
+                  summary: Pedido gravado, mas algum item ou baixa de estoque falhou
+                  value: { erro: Pedido criado com erros }
+
+  /pedidos/{id}:
+    get:
+      tags: [Pedidos]
+      operationId: buscarPedido
+      summary: Detalhe do pedido com os itens
+      description: Retorna os valores gravados na criação (fonte da verdade do valor cobrado).
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Pedido encontrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PedidoDetalhe'
+              example:
+                id: 1
+                cliente_id: 1
+                subtotal: 250
+                desconto: 0
+                frete: 15
+                total: 265
+                status: criado
+                criado_em: '2026-11-17T20:31:26.211Z'
+                itens:
+                  - { produto_id: 2, nome: Teclado mecânico, quantidade: 1, preco_unitario: 250 }
+        '404':
+          description: Pedido não existe (inclusive id não numérico).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: Pedido nao encontrado }
+        '500':
+          description: Erro no banco.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              examples:
+                pedido:
+                  value: { erro: Erro ao buscar pedido }
+                itens:
+                  value: { erro: Erro ao buscar itens }
+
+  /pedidos/{id}/resumo:
+    get:
+      tags: [Pedidos]
+      operationId: resumoPedido
+      summary: Resumo legível do pedido
+      description: |
+        Recalcula subtotal e desconto a partir dos itens gravados; o frete é o
+        valor gravado.
+
+        **Divergência conhecida:** o desconto não é lido do pedido e, para
+        cliente `comum`, só é aplicado com subtotal **acima** de R$ 500 (a
+        criação aplica a partir de R$ 500). Num pedido `comum` de exatamente
+        R$ 500,00, o resumo mostra um total diferente do cobrado. A fonte da
+        verdade é `GET /pedidos/{id}`.
+
+        Com id não numérico, esta rota responde 500 (e não 404).
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Resumo do pedido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resumo'
+              example:
+                pedido: 2
+                cliente: João Pereira
+                tipo_cliente: vip
+                itens: ['1x Monitor 24 polegadas - R$ 899.00', '2x Mouse sem fio - R$ 100.00']
+                subtotal: 999
+                desconto: 99.9
+                frete: 0
+                total: 899.1
+                status: criado
+        '404':
+          description: Pedido não existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: Pedido nao encontrado }
+        '500':
+          description: Erro no banco, inclusive quando o id não é numérico.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: Erro ao gerar resumo }
+
+  /pedidos/{id}/cancelar:
+    post:
+      tags: [Pedidos]
+      operationId: cancelarPedido
+      summary: Cancela o pedido e devolve o estoque
+      description: |
+        Só pedidos com status `criado` podem ser cancelados (`criado` →
+        `cancelado`). A quantidade de cada item volta ao estoque. Não há
+        transação.
+      parameters:
+        - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Pedido cancelado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelamentoPedido'
+              example: { id: 1, status: cancelado }
+        '400':
+          description: Pedido não está com status `criado`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: Pedido nao pode ser cancelado (status cancelado) }
+        '404':
+          description: Pedido não existe (inclusive id não numérico).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: Pedido nao encontrado }
+        '500':
+          description: Erro no banco.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: Erro ao cancelar pedido }
+
+  /frete:
+    get:
+      tags: [Frete]
+      operationId: simularFrete
+      summary: Simula o frete para um CEP e subtotal
+      description: |
+        Simulação com o CEP informado; na criação do pedido vale o CEP do
+        cadastro do cliente. Grátis com subtotal a partir de R$ 300; senão,
+        pelo 1º dígito do CEP: 0–3 R$ 15, 4–7 R$ 30, 8–9 R$ 20.
+      parameters:
+        - name: cep
+          in: query
+          required: true
+          description: 8 dígitos, hífen opcional.
+          schema:
+            type: string
+          example: 30130-000
+        - name: subtotal
+          in: query
+          required: false
+          description: Subtotal em reais, antes do desconto. Ausente ou inválido vale 0.
+          schema:
+            type: number
+          example: 120
+      responses:
+        '200':
+          description: Frete calculado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Frete'
+              example: { cep: '30130000', subtotal: 120, frete: 15 }
+        '400':
+          description: CEP ausente ou inválido.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: CEP invalido }
+
+  /relatorios/vendas:
+    get:
+      tags: [Relatórios]
+      operationId: relatorioVendas
+      summary: Faturamento por tipo de cliente
+      description: |
+        Pedidos, itens e faturamento por tipo de cliente, mais o total `geral`.
+        Pedidos cancelados ficam de fora.
+
+        **Divergência conhecida:** o desconto é recalculado (não lido do
+        pedido) e arredondado para reais inteiros. O faturamento pode não bater
+        com a soma dos totais cobrados: no exemplo, o pedido vip tem `total`
+        899.1, mas entra no relatório como 899. As regras de desconto deste
+        relatório são uma cópia própria; um tipo de cliente novo não tem
+        desconto aqui.
+      responses:
+        '200':
+          description: Relatório de vendas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RelatorioVendas'
+              examples:
+                semPedidos:
+                  summary: Nenhum pedido ativo
+                  value:
+                    geral: { pedidos: 0, itens: 0, faturamento: 0 }
+                comPedidos:
+                  summary: Um pedido comum e um vip
+                  value:
+                    comum: { pedidos: 1, itens: 1, faturamento: 265 }
+                    vip: { pedidos: 1, itens: 3, faturamento: 899 }
+                    geral: { pedidos: 2, itens: 4, faturamento: 1164 }
+        '500':
+          description: Erro no banco.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: Erro ao gerar relatorio }
+
+components:
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      description: Id numérico do recurso.
+      schema:
+        type: integer
+        minimum: 1
+      example: 1
+
+  schemas:
+    Produto:
+      type: object
+      required: [id, nome, preco, estoque]
+      properties:
+        id:
+          type: integer
+          example: 2
+        nome:
+          type: string
+          example: Teclado mecânico
+        preco:
+          type: number
+          description: Preço atual em reais.
+          example: 250
+        estoque:
+          type: integer
+          example: 15
+
+    TipoCliente:
+      type: string
+      description: |
+        Tipo do cliente, usado no desconto. Os dados usam `comum`, `vip` e
+        `atacado`; o banco aceita qualquer texto (tipos sem regra não têm desconto).
+      example: comum
+
+    Cliente:
+      type: object
+      required: [id, nome, email, cep, tipo]
+      properties:
+        id:
+          type: integer
+          example: 1
+        nome:
+          type: string
+          example: Maria Silva
+        email:
+          type: string
+          example: maria.silva@example.com
+        cep:
+          type: string
+          description: CEP com 8 dígitos, sem hífen.
+          pattern: '^[0-9]{8}$'
+          example: '01310100'
+        tipo:
+          $ref: '#/components/schemas/TipoCliente'
+
+    NovoCliente:
+      type: object
+      required: [nome, email, cep]
+      properties:
+        nome:
+          type: string
+          example: Ana Souza
+        email:
+          type: string
+          description: Obrigatório; o formato não é validado.
+          example: ana@example.com
+        cep:
+          type: string
+          description: 8 dígitos, hífen opcional. Gravado sem hífen.
+          example: 04538-133
+
+    StatusPedido:
+      type: string
+      enum: [criado, cancelado]
+
+    Pedido:
+      type: object
+      description: Valores gravados na criação do pedido.
+      required: [id, cliente_id, subtotal, desconto, frete, total, status]
+      properties:
+        id:
+          type: integer
+          example: 1
+        cliente_id:
+          type: integer
+          example: 1
+        subtotal:
+          type: number
+          description: Soma de preco_unitario × quantidade dos itens.
+          example: 250
+        desconto:
+          type: number
+          example: 0
+        frete:
+          type: number
+          example: 15
+        total:
+          type: number
+          description: subtotal − desconto + frete.
+          example: 265
+        status:
+          $ref: '#/components/schemas/StatusPedido'
+
+    ItemPedido:
+      type: object
+      required: [produto_id, nome, quantidade, preco_unitario]
+      properties:
+        produto_id:
+          type: integer
+          example: 2
+        nome:
+          type: string
+          example: Teclado mecânico
+        quantidade:
+          type: integer
+          example: 1
+        preco_unitario:
+          type: number
+          description: Preço do produto copiado na criação do pedido.
+          example: 250
+
+    PedidoDetalhe:
+      allOf:
+        - $ref: '#/components/schemas/Pedido'
+        - type: object
+          required: [criado_em, itens]
+          properties:
+            criado_em:
+              type: string
+              format: date-time
+              example: '2026-11-17T20:31:26.211Z'
+            itens:
+              type: array
+              items:
+                $ref: '#/components/schemas/ItemPedido'
+
+    NovoPedido:
+      type: object
+      required: [cliente_id, itens]
+      properties:
+        cliente_id:
+          type: integer
+          example: 1
+        itens:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [produto_id, quantidade]
+            properties:
+              produto_id:
+                type: integer
+                example: 2
+              quantidade:
+                type: integer
+                minimum: 1
+                example: 1
+
+    CancelamentoPedido:
+      type: object
+      required: [id, status]
+      properties:
+        id:
+          type: integer
+          example: 1
+        status:
+          type: string
+          enum: [cancelado]
+
+    Resumo:
+      type: object
+      required: [pedido, cliente, tipo_cliente, itens, subtotal, desconto, frete, total, status]
+      properties:
+        pedido:
+          type: integer
+          description: Id do pedido.
+          example: 2
+        cliente:
+          type: string
+          description: Nome do cliente.
+          example: João Pereira
+        tipo_cliente:
+          $ref: '#/components/schemas/TipoCliente'
+        itens:
+          type: array
+          description: 'Uma linha por item: "<quantidade>x <produto> - R$ <valor>".'
+          items:
+            type: string
+          example: ['1x Monitor 24 polegadas - R$ 899.00', '2x Mouse sem fio - R$ 100.00']
+        subtotal:
+          type: number
+          description: Recalculado a partir dos itens.
+        desconto:
+          type: number
+          description: Recalculado (não é o valor gravado; veja a operação).
+        frete:
+          type: number
+          description: Valor gravado no pedido.
+        total:
+          type: number
+          description: subtotal − desconto + frete, com os valores recalculados.
+        status:
+          $ref: '#/components/schemas/StatusPedido'
+
+    Frete:
+      type: object
+      required: [cep, subtotal, frete]
+      properties:
+        cep:
+          type: string
+          description: CEP informado, sem hífen.
+          example: '30130000'
+        subtotal:
+          type: number
+          example: 120
+        frete:
+          type: number
+          example: 15
+
+    Totais:
+      type: object
+      required: [pedidos, itens, faturamento]
+      properties:
+        pedidos:
+          type: integer
+          description: Quantidade de pedidos não cancelados.
+        itens:
+          type: integer
+          description: Soma das quantidades dos itens.
+        faturamento:
+          type: number
+          description: Soma de subtotal − desconto (recalculado) + frete.
+
+    RelatorioVendas:
+      type: object
+      description: |
+        Uma chave por tipo de cliente com pedidos (ex.: `comum`, `vip`,
+        `atacado`), mais `geral` com a soma de todos.
+      required: [geral]
+      properties:
+        geral:
+          $ref: '#/components/schemas/Totais'
+      additionalProperties:
+        $ref: '#/components/schemas/Totais'
+
+    Erro:
+      type: object
+      description: Formato de erro do código legado (produtos, pedidos, frete, relatórios).
+      required: [erro]
+      properties:
+        erro:
+          type: string
+          example: Pedido nao encontrado
+
+    ErrorClientes:
+      type: object
+      description: Formato de erro das rotas de clientes.
+      required: [error]
+      properties:
+        error:
+          type: string
+          example: Cliente nao encontrado
