@@ -1,9 +1,30 @@
+/**
+ * @file Rotas de pedidos, montadas em `/pedidos` (app.js).
+ *
+ * Outras rotas de pedido ainda estao em app.js: `GET /pedidos/:id/resumo` e
+ * `POST /pedidos/:id/cancelar`. Nao existe `GET /pedidos` (listagem) nem
+ * `DELETE /pedidos/:id`. Erros usam o formato `{ erro: '...' }`.
+ */
+
 var express = require('express')
 var router = express.Router()
 var db = require('../db')
 var descontos = require('../descontos')
 var utils = require('../utils')
 
+/**
+ * `GET /pedidos/:id`: detalhe do pedido com os itens.
+ *
+ * Retorna os valores gravados na criacao (nao recalcula nada).
+ *
+ * - 200: `{ id, cliente_id, subtotal, desconto, frete, total, status, criado_em,
+ *   itens: [{ produto_id, nome, quantidade, preco_unitario }] }`
+ * - 404: `{ erro: 'Pedido nao encontrado' }`
+ * - 500: `{ erro: 'Erro ao buscar pedido' }` ou `{ erro: 'Erro ao buscar itens' }`
+ *
+ * @param {import('express').Request} req `req.params.id`: id do pedido.
+ * @param {import('express').Response} res
+ */
 function getPedido(req, res) {
   db.get('SELECT * FROM pedidos WHERE id = ?', [req.params.id], function(err, pedido) {
     if (err) {
@@ -26,6 +47,41 @@ function getPedido(req, res) {
 
 router.get('/:id', getPedido)
 
+/**
+ * `POST /pedidos`: cria um pedido. E a fonte canonica das regras de preco:
+ * os valores calculados aqui sao os gravados em `pedidos`.
+ *
+ * Body: `{ cliente_id, itens: [{ produto_id, quantidade }] }`
+ * (`quantidade` inteiro > 0).
+ *
+ * Calculo:
+ * - `preco_unitario` = preco atual do produto (copiado para `itens_pedido`);
+ * - `subtotal` = soma de `preco_unitario * quantidade` (2 casas);
+ * - desconto: `comum` 5% se subtotal >= 500; outros tipos via
+ *   `descontos.desconto_<tipo>(subtotal, itens)`; sem funcao, 0;
+ * - frete sobre o subtotal ANTES do desconto, pelo CEP do cadastro do cliente
+ *   (subtotal >= 300 gratis; senao 1o digito 0-3 R$ 15, 4-7 R$ 30, 8-9 R$ 20);
+ * - `total` = subtotal - desconto + frete.
+ *
+ * Efeitos: insere o pedido com status `criado`, insere os itens e baixa o
+ * estoque de cada produto. Nao ha transacao: se um insert/update falhar no
+ * meio, o pedido fica gravado (resposta 500 'Pedido criado com erros').
+ *
+ * Respostas:
+ * - 201: `{ id, cliente_id, subtotal, desconto, frete, total, status: 'criado' }`
+ * - 400: `Pedido sem itens`, `cliente_id obrigatorio`,
+ *   `produto_id obrigatorio no item N`, `Quantidade invalida no item N`,
+ *   `Estoque insuficiente para <produto>`
+ * - 404: `Cliente nao encontrado`, `Produto <id> nao encontrado`
+ * - 500: `Erro interno`, `Erro ao salvar pedido`, `Pedido criado com erros`
+ * (todas no formato `{ erro: '...' }`)
+ *
+ * Atencao: varios SQLs aqui sao concatenados (codigo legado, nao copie).
+ *
+ * @todo Diverge de utils.calcula_frete: a regra de frete abaixo e uma copia
+ *   inline da funcao de utils.js. Hoje produzem o mesmo resultado; ao mudar
+ *   uma, alinhe a outra (esta e a que vale para o valor cobrado).
+ */
 router.post('/', function(req, res) {
   var inicio = Date.now()
   var body = req.body

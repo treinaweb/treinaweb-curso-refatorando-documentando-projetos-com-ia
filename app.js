@@ -1,3 +1,17 @@
+/**
+ * @file Bootstrap da Loja API (Express).
+ *
+ * - Porta: variavel de ambiente `PORTA` (padrao 3000).
+ * - Banco: ver db.js (`DB_PATH`).
+ * - Middlewares: `express.json()` e um log de cada requisicao no console
+ *   (`<ISO> <METODO> <URL>`).
+ * - Routers: `/clientes` (routes/clientes.js) e `/pedidos` (routes/pedidos.js).
+ * - Rotas legadas ainda definidas aqui: produtos, `/frete`,
+ *   `/pedidos/:id/resumo`, `/relatorios/vendas` e `/pedidos/:id/cancelar`.
+ *
+ * Sem autenticacao (uso interno). Erros neste arquivo usam `{ erro: '...' }`.
+ */
+
 var express = require('express')
 var db = require('./db')
 var descontos = require('./descontos')
@@ -10,6 +24,17 @@ app.use(function(req, res, next) {
     next()
 })
 
+/**
+ * `GET /produtos`: lista os produtos.
+ *
+ * Query opcional `busca`: filtra por `nome LIKE '%busca%'`
+ * (sem diferenciar maiusculas de minusculas para letras ASCII).
+ *
+ * - 200: `[{ id, nome, preco, estoque }]`
+ * - 500: `{ erro: 'Erro ao buscar produtos' }`
+ *
+ * Atencao: `busca` e concatenada no SQL (codigo legado, nao copie o padrao).
+ */
 app.get('/produtos', function(req, res) {
     var sql = 'SELECT * FROM produtos'
     if (req.query.busca) {
@@ -24,6 +49,13 @@ app.get('/produtos', function(req, res) {
     })
 })
 
+/**
+ * `GET /produtos/:id`: detalhe de um produto.
+ *
+ * - 200: `{ id, nome, preco, estoque }`
+ * - 404: `{ erro: 'Produto nao encontrado' }`
+ * - 500: `{ erro: 'Erro ao buscar produto' }`
+ */
 app.get('/produtos/:id', function(req, res) {
     db.get('SELECT * FROM produtos WHERE id = ?', [req.params.id], function(err, row) {
         if (err) {
@@ -37,6 +69,15 @@ app.get('/produtos/:id', function(req, res) {
     })
 })
 
+/**
+ * `GET /frete?cep=&subtotal=`: simula o frete (usa `utils.calcula_frete`).
+ *
+ * E uma simulacao: usa o CEP informado na query, enquanto `POST /pedidos`
+ * usa o CEP do cadastro do cliente. `subtotal` ausente ou invalido vale 0.
+ *
+ * - 200: `{ cep, subtotal, frete }` (cep sem hifen)
+ * - 400: `{ erro: 'CEP invalido' }`
+ */
 app.get('/frete', function(req, res) {
     var cep = utils.validaCep(req.query.cep)
     if (!cep) {
@@ -49,6 +90,24 @@ app.get('/frete', function(req, res) {
 app.use('/clientes', require('./routes/clientes'))
 app.use('/pedidos', require('./routes/pedidos'))
 
+/**
+ * `GET /pedidos/:id/resumo`: resumo legivel do pedido.
+ *
+ * Recalcula subtotal e desconto a partir dos itens gravados (nao le
+ * `pedidos.desconto`/`pedidos.total`); o frete vem do valor gravado.
+ * O desconto `vip` e os demais tipos usam descontos.js.
+ *
+ * - 200: `{ pedido, cliente, tipo_cliente, itens: ['2x Mouse sem fio - R$ 100.00', ...],
+ *   subtotal, desconto, frete, total, status }`
+ * - 404: `{ erro: 'Pedido nao encontrado' }`
+ * - 500: `{ erro: 'Erro ao gerar resumo' }`
+ *
+ * Atencao: o `id` e concatenado no SQL (codigo legado, nao copie o padrao).
+ *
+ * @todo Diverge de POST /pedidos: aplica 5% ao cliente `comum` so com
+ *   subtotal > 500 (la e >= 500). Num pedido `comum` de exatamente R$ 500,00,
+ *   o resumo mostra desconto 0 e um total diferente do cobrado (a confirmar).
+ */
 app.get('/pedidos/:id/resumo', function(req, res) {
     db.get('SELECT p.*, c.nome, c.tipo FROM pedidos p JOIN clientes c ON c.id = p.cliente_id WHERE p.id = ' + req.params.id, function(err, ped) {
         if (err) {
@@ -98,6 +157,23 @@ app.get('/pedidos/:id/resumo', function(req, res) {
     })
 })
 
+/**
+ * `GET /relatorios/vendas`: totais de vendas por tipo de cliente, ignorando
+ * pedidos cancelados.
+ *
+ * - 200 (sem pedidos): `{ geral: { pedidos: 0, itens: 0, faturamento: 0 } }`
+ * - 200: `{ <tipo>: { pedidos, itens, faturamento }, ..., geral: {...} }`, em
+ *   que `itens` e a soma das quantidades e `faturamento` = subtotal - desconto + frete
+ * - 500: `{ erro: 'Erro ao gerar relatorio' }`
+ *
+ * Nao usa descontos.js: tem uma copia propria das regras (vip 10%,
+ * comum 5% se >= 500, atacado 15% se quantidade >= 10). Um tipo novo em
+ * descontos.js nao tem desconto aqui.
+ *
+ * @todo Diverge de POST /pedidos: recalcula o desconto em vez de ler
+ *   `pedidos.desconto`, arredondando com `Math.round` para reais inteiros
+ *   (la sao 2 casas). O faturamento pode nao bater com a soma de `pedidos.total`.
+ */
 app.get('/relatorios/vendas', function(req, res) {
     db.all("SELECT p.*, c.tipo FROM pedidos p, clientes c WHERE c.id = p.cliente_id AND p.status != 'cancelado'", function(err, pedidos) {
         if (err) {
@@ -151,6 +227,18 @@ app.get('/relatorios/vendas', function(req, res) {
 
 // TODO: mover o resto pra routes/ depois
 
+/**
+ * `POST /pedidos/:id/cancelar`: cancela um pedido e devolve o estoque.
+ *
+ * So pedidos com status `criado` podem ser cancelados (`criado` -> `cancelado`).
+ * Muda o status e soma de volta ao estoque a quantidade de cada item.
+ * Sem transacao: os updates de estoque rodam em loop apos o update do status.
+ *
+ * - 200: `{ id, status: 'cancelado' }`
+ * - 400: `{ erro: 'Pedido nao pode ser cancelado (status <status>)' }`
+ * - 404: `{ erro: 'Pedido nao encontrado' }`
+ * - 500: `{ erro: 'Erro ao cancelar pedido' }`
+ */
 app.post('/pedidos/:id/cancelar', function(req, res) {
     db.get('SELECT * FROM pedidos WHERE id = ?', [req.params.id], function(err, p) {
         if (err) {
@@ -183,6 +271,8 @@ app.post('/pedidos/:id/cancelar', function(req, res) {
     })
 })
 
+// DELETE /pedidos/:id desativado de proposito: pedidos sao cancelados
+// (POST /pedidos/:id/cancelar), nunca excluidos. Nao reative.
 /*
 app.delete('/pedidos/:id', function(req, res) {
     db.run('DELETE FROM itens_pedido WHERE pedido_id = ?', [req.params.id], function(err) {

@@ -1,3 +1,24 @@
+/**
+ * @file Conexao com o SQLite, criacao do schema e dados de exemplo.
+ *
+ * - Arquivo do banco: variavel de ambiente `DB_PATH` (padrao `./loja.db`).
+ * - Se o arquivo NAO existe na inicializacao, cria as tabelas e insere os
+ *   produtos e clientes de exemplo abaixo. Se ja existe, nada e criado nem
+ *   migrado. Apagar o arquivo zera todos os dados.
+ * - Tabelas:
+ *   - `clientes` (id, nome, email, cep sem hifen, tipo: comum | vip | atacado)
+ *   - `produtos` (id, nome, preco, estoque)
+ *   - `pedidos` (id, cliente_id, subtotal, desconto, frete, total,
+ *     status: criado | cancelado, criado_em em ISO 8601)
+ *   - `itens_pedido` (id, pedido_id, produto_id, quantidade, preco_unitario
+ *     copiado do produto na criacao do pedido)
+ *
+ * Exporta a conexao `sqlite3.Database` em modo `serialize()` (comandos
+ * executados em ordem). Nao ha migracoes nem indices.
+ *
+ * @module db
+ */
+
 var sqlite3 = require('sqlite3')
 var fs = require('fs')
 

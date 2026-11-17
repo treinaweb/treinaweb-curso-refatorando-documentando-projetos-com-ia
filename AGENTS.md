@@ -10,8 +10,8 @@ Node 22 + Express 4 + SQLite3 (callbacks, sem ORM). Uso interno, **sem autentica
   Apagar `loja.db` zera os dados: **pergunte antes de apagar**.
 - **Não há testes automatizados.** Verifique mudanças subindo a API e chamando os endpoints com `curl`.
   Para não sujar o banco local, use um banco descartável: `DB_PATH=/tmp/loja-teste.db PORTA=3999 node app.js`.
-- O README está desatualizado (cita `GET /pedidos` e `DELETE /pedidos/:id`, que não existem).
-  A fonte da verdade das rotas é `app.js` + `routes/`.
+- O README é a referência da API para quem a consome (rotas, payloads, respostas, erros, exemplos).
+  Em caso de dúvida, a fonte da verdade das rotas continua sendo `app.js` + `routes/`.
 
 ## Mapa
 
@@ -58,6 +58,11 @@ o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o n
 - Código novo: estilo de `routes/clientes.js` (`const`, arrow functions, `express.Router`) e
   **SQL sempre parametrizado com `?`**.
 - Rotas novas vão em `routes/`, não em `app.js`.
+- **JSDoc em português** (`/** ... */`, sem acentos, como os demais comentários) em toda função e rota nova:
+  entradas, resposta de sucesso e erros com status. Divergências entre cópias de regras são marcadas com
+  `@todo Diverge de <fonte canônica>: ...` (e `(a confirmar)` quando dependem do negócio);
+  liste-as com `grep -rn "Diverge de" --include='*.js' --exclude-dir=node_modules .`.
 - Mudanças de comportamento passam pelo OpenSpec: `/opsx:explore` → `/opsx:propose` → `/opsx:apply`.
   Specs (quando existirem) ficam em `openspec/specs/`.
 - **Mantenha este arquivo atualizado:** ao mudar regras de negócio, comandos ou convenções, atualize o `AGENTS.md` na mesma mudança.
+- Ao mudar uma regra ou rota, atualize também o `README.md` e o JSDoc afetado na mesma mudança.
