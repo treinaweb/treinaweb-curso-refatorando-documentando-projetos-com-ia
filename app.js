@@ -10,6 +10,9 @@
  *   `/pedidos/:id/resumo`, `/relatorios/vendas` e `/pedidos/:id/cancelar`.
  *
  * Sem autenticacao (uso interno). Erros neste arquivo usam `{ erro: '...' }`.
+ *
+ * Exporta o `app` (usado pelos testes com supertest). So escuta na porta
+ * quando executado diretamente (`node app.js` / `npm start`).
  */
 
 var express = require('express')
@@ -288,6 +291,10 @@ app.delete('/pedidos/:id', function(req, res) {
 */
 
 var porta = process.env.PORTA || 3000
-app.listen(porta, function() {
-    console.log('Loja rodando na porta ' + porta)
-})
+if (require.main === module) {
+    app.listen(porta, function() {
+        console.log('Loja rodando na porta ' + porta)
+    })
+}
+
+module.exports = app

@@ -29,6 +29,19 @@ Para testar sem mexer no banco local, use um banco descartável:
 DB_PATH=/tmp/loja-teste.db PORTA=3999 npm start
 ```
 
+## Testes
+
+Requer Node 22.12 ou mais recente.
+
+```
+npm test               # testes (Vitest + supertest), cada arquivo com banco temporário próprio
+npm run typecheck      # checagem de tipos dos testes (tsc --noEmit)
+npm run test:coverage  # testes com relatório de cobertura
+```
+
+Os testes ficam em `test/` e registram o comportamento atual da API, inclusive as divergências
+descritas em [Regras](#regras). O banco local (`loja.db`) não é usado.
+
 ## Rotas
 
 ```

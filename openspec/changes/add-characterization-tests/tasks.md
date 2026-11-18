@@ -1,0 +1,38 @@
+# Tasks
+
+Todos os comandos usam Node 22 (>= 22.12) no PATH. O `loja.db` local não deve ser tocado: anotar o mtime dele antes da tarefa 1.1.
+
+## 1. Spike: app testável e infraestrutura do Vitest
+
+- [x] 1.1 No fim do `app.js`, trocar o `app.listen(...)` por `if (require.main === module) { app.listen(...) }` seguido de `module.exports = app` (D1), sem mexer em mais nada do arquivo. Verificar à mão: `DB_PATH=<scratchpad>/m.db PORTA=3999 node app.js` imprime `Loja rodando na porta 3999`, e `curl localhost:3999/produtos/1` devolve o Mouse sem fio. Conferir que `git diff app.js` mostra só essas linhas
+- [x] 1.2 Instalar as devDependencies (`vitest`, `@vitest/coverage-v8`, `supertest`, `@types/supertest`, `typescript`, `@types/node@22`) com `npm install -D` e adicionar os scripts `test`, `test:coverage` e `typecheck` (D8). Adicionar `coverage/` ao `.gitignore`. Verificar que `npm ls --depth=0` lista tudo sem erros e que `dependencies` e `engines` não mudaram
+- [x] 1.3 Criar `vitest.config.mts` (`setupFiles: ['test/setup.ts']`, coverage v8 em texto), `tsconfig.json` (D4), `test/setup.ts` (D3) e `test/helpers.ts` com o `request(app)`. Verificar com um primeiro teste em `test/produtos.test.ts` (`GET /produtos` → 200 com 17 itens) que `npm test` passa e termina sozinho, sem travar
+- [x] 1.4 Validar os riscos do spike: (a) um teste temporário confirma que o `db` obtido com `createRequire` é a mesma instância usada pelo app, por exemplo inserindo um cliente via API e lendo pela conexão; (b) depois do `npm test`, nenhum arquivo `loja-test-*` fica em `os.tmpdir()`; (c) o `loja.db` local não foi modificado; (d) `npm run typecheck` passa. Se o TS 7 falhar no `allowJs`, fixar o `typescript` em 6.x e registrar no design. Remover o teste temporário. **Se (a) ou (b) falhar sem solução, parar e reavaliar com o usuário antes do grupo 2**
+- [x] 1.5 Documentar no `AGENTS.md` (seção "Rodar e verificar": `npm test`, `npm run typecheck`, `npm run test:coverage`, Node >= 22.12 para os testes, testes só pelo HTTP, convenção `[atual]` do D6 e o `grep` para listá-los; no Mapa, `test/`) e no `README.md` (uma seção curta "Testes" com os comandos). Verificar com `git diff AGENTS.md README.md` que nenhuma regra de negócio nem seção de rotas mudou
+
+## 2. Rotas simples: produtos, clientes e frete
+
+- [x] 2.1 Completar `test/produtos.test.ts`: a listagem inteira comparada com o seed (`toEqual`), `?busca=cabo` (sem diferenciar maiúsculas), busca sem resultados → `[]`, `[atual]` `?busca='` → 500 `{erro: 'Erro ao buscar produtos'}`, detalhe, id inexistente → 404. Verificar que `npm test` passa
+- [x] 2.2 Criar `test/clientes.test.ts`: a listagem dos 10 do seed, detalhe, 404 com `{error}`, cadastro com CEP com e sem hífen (gravado sem hífen, `tipo: 'comum'`, 201), cliente novo aparecendo na listagem, faltando nome ou email → 400, CEP inválido → 400, `[atual]` `POST` sem body → 400 `Nome e email sao obrigatorios`. Verificar que `npm test` passa
+- [x] 2.3 Criar `test/frete.test.ts`: um CEP de cada faixa (0-3 → 15, 4-7 → 30, 8-9 → 20), subtotal 299.99 x 300 (limite), CEP com hífen normalizado na resposta, `subtotal` ausente ou inválido → 0, CEP ausente ou inválido → 400 `{erro: 'CEP invalido'}`. Verificar que `npm test` passa
+- [x] 2.4 Verificação de sensibilidade: alterar temporariamente o limite de frete grátis em `utils.calcula_frete` (300 → 301) e a mensagem de 404 de cliente; confirmar que `npm test` falha nos testes esperados; reverter e confirmar com `git diff utils.js routes/clientes.js` vazio
+
+## 3. Criação e leitura de pedidos
+
+- [x] 3.1 Criar `test/pedidos.test.ts` com as validações de `POST /pedidos`: `[atual]` sem body → 400 `cliente_id obrigatorio`, sem `cliente_id`, sem itens, `itens` vazio ou não array, sem `produto_id` no item N, quantidade 0, negativa, decimal ou string no item N, cliente inexistente → 404, produto inexistente → 404 `Produto <id> nao encontrado`, estoque insuficiente → 400 com o nome do produto, `[atual]` `produto_id: "abc"` → 500 `Erro interno`. Verificar que `npm test` passa
+- [x] 3.2 Em `pedidos.test.ts`, adicionar as regras de preço com valores exatos: `comum` com 499.x (sem desconto) x exatamente 500 (5%); `vip` com subtotal baixo (10%, contrariando o comentário antigo de "só acima de 200"); `atacado` com 9 x 10 unidades somadas em mais de um item; frete pelo CEP **do cadastro** (clientes de CEPs 0-3, 4-7 e 8-9) e grátis com subtotal >= 300 antes do desconto; o caso de ponto flutuante (3x Cabo USB-C 29.90 → subtotal 89.7). Comparar a resposta 201 inteira. Verificar que `npm test` passa
+- [x] 3.3 Em `pedidos.test.ts`, adicionar os efeitos e a leitura: a baixa de estoque (diferença antes e depois), `GET /pedidos/:id` com os valores gravados, o `criado_em` ISO e os `itens` com `preco_unitario` copiado, `GET /pedidos/:id` inexistente → 404, `[atual]` produto repetido no pedido acima do estoque → 201 e estoque negativo (comentário apontando o bug). Verificar que `npm test` passa
+- [x] 3.4 Verificação de sensibilidade: alterar temporariamente `>= 500` para `> 500` em `routes/pedidos.js` e a taxa de `desconto_vip` em `descontos.js`; confirmar que testes de 3.2 falham; reverter e confirmar com `git diff routes/ descontos.js` vazio
+
+## 4. Resumo, cancelamento e relatório
+
+- [x] 4.1 Criar `test/resumo.test.ts`: o resumo inteiro de um pedido conhecido (linhas `Nx Nome - R$ 0.00`, `tipo_cliente`, frete gravado, status), id inexistente → 404, resumo de pedido cancelado mostrando `status: 'cancelado'`, `[atual]` `comum` com R$ 500 exatos → resumo com desconto 0 e total 500, enquanto `GET /pedidos/:id` mostra 25 e 475 (comentário com o `@todo Diverge de POST /pedidos`). Verificar que `npm test` passa
+- [x] 4.2 Criar `test/cancelar.test.ts`: o cancelamento → 200 `{id, status: 'cancelado'}` e o estoque devolvido para cada item (diferença), um segundo cancelamento → 400 `Pedido nao pode ser cancelado (status cancelado)`, id inexistente → 404, `DELETE /pedidos/:id` → 404 (rota desativada). Verificar que `npm test` passa
+- [x] 4.3 Criar `test/relatorio.test.ts` (D7): o primeiro teste com o banco vazio → `{geral: {pedidos: 0, itens: 0, faturamento: 0}}`; depois, um conjunto fixo de pedidos (`comum`, `vip`, `atacado`, um deles cancelado) e o relatório inteiro comparado com os valores exatos; `[atual]` desconto com `Math.round` fazendo o faturamento diferir da soma de `pedidos.total` (comentário com o `@todo`); um tipo sem pedidos não aparece. Verificar que `npm test` passa
+- [x] 4.4 Adicionar os `it.todo` do D9 nos arquivos correspondentes e verificar que aparecem como pendentes na saída do `npm test`
+- [x] 4.5 Verificação de sensibilidade: alterar temporariamente o `> 500` do resumo para `>= 500` em `app.js` e remover a devolução de estoque no cancelamento; confirmar que `[atual]` do resumo e o teste de estoque do cancelamento falham; reverter e confirmar com `git diff app.js` mostrando só a mudança de 1.1
+
+## 5. Verificação final
+
+- [x] 5.1 Rodar `npm test` três vezes seguidas (todas passam, sem testes instáveis), `npm run typecheck` (passa) e `npm run test:coverage` (gera o relatório; registrar no resumo da change os ramos não cobertos, que devem corresponder às lacunas do D9). Conferir que `grep -rn "\[atual\]" test` lista os comportamentos atuais previstos na proposta
+- [x] 5.2 Confirmar com `git status` e `git diff --stat` que só mudaram `app.js` (a mudança de 1.1), `package.json`, `package-lock.json`, `.gitignore`, `AGENTS.md`, `README.md` e os arquivos novos (`test/`, `vitest.config.mts`, `tsconfig.json`, a pasta da change), que `docs/openapi.yaml` e as demais fontes estão intactos e que o mtime do `loja.db` é o mesmo anotado no início
