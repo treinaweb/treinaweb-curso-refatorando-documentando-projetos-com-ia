@@ -1,7 +1,7 @@
 # Loja API — contexto para agentes
 
 API REST interna de pedidos de uma loja de informática/periféricos.
-Node 22 + Express 4 + SQLite3 (callbacks, sem ORM), em transição de JS para TypeScript. Uso interno, **sem autenticação**.
+Node 24 + Express 5 + SQLite3 (callbacks, sem ORM), em transição de JS para TypeScript. Uso interno, **sem autenticação**.
 
 ## Rodar e verificar
 
@@ -11,7 +11,7 @@ Node 22 + Express 4 + SQLite3 (callbacks, sem ORM), em transição de JS para Ty
 - Se o arquivo do banco não existe, `abrirBanco` (`src/db`) cria o schema e insere dados de exemplo (produtos e clientes).
   Apagar `loja.db` zera os dados: **pergunte antes de apagar**.
 - **Testes:** `npm test` (Vitest + supertest), `npm run typecheck` (`tsc --noEmit` do editor e do build; o Vitest não checa tipos) e
-  `npm run test:coverage`. Exigem Node >= 22.12 (o `.nvmrc` atende). Rode `npm test` antes e depois de qualquer mudança.
+  `npm run test:coverage`. Exigem Node >= 24.11 (o `.nvmrc` atende). Rode `npm test` antes e depois de qualquer mudança.
   - São **testes de caracterização**: registram o comportamento HTTP atual (status, corpo inteiro, efeitos no estoque
     e nos valores gravados). Testam só pelo HTTP. Os `*.test.ts` importam só de `./helpers`; não importe `utils`, `descontos`
     nem `db` neles. Só `test/helpers.ts` e `test/setup.ts` montam o app (`createApp` + `abrirBanco`): cada arquivo roda
@@ -72,6 +72,9 @@ o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o n
   como inteiros pelos schemas, mas não copie esse padrão; a etapa 4 da refatoração o elimina.
 - **Sem transação** na criação/cancelamento de pedido; operações em loop com contador de callbacks.
 - Formato de erro inconsistente: `{erro}` no código legado, `{error}` em `src/routes/clientes.js`.
+- **Query parser fixado em `extended`** em `src/app.ts` (`app.set('query parser', 'extended')`). O padrão do
+  Express 5 (`simple`) não entende colchetes e faria `?busca[x]=` listar todos os produtos em vez de
+  `400 Busca invalida`. Não remova sem uma change de contrato.
 
 ## Convenções
 

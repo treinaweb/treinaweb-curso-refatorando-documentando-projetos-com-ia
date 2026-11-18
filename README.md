@@ -1,12 +1,12 @@
 # Loja API
 
-API REST de pedidos da loja de informática e periféricos. Node 22 + Express 4 + SQLite.
+API REST de pedidos da loja de informática e periféricos. Node 24 + Express 5 + SQLite.
 
 Uso interno, **sem autenticação**. Não expor fora da rede da loja.
 
 ## Como rodar
 
-Requer Node 22 (veja `.nvmrc`).
+Requer Node 24.11 ou mais recente (veja `.nvmrc`). Ao trocar de versão do Node, rode `npm install` de novo.
 
 ```
 npm install
@@ -34,7 +34,7 @@ DB_PATH=/tmp/loja-teste.db PORTA=3999 npm start
 
 ## Testes
 
-Requer Node 22.12 ou mais recente.
+Requer Node 24.11 ou mais recente.
 
 ```
 npm test               # testes (Vitest + supertest), cada arquivo com banco temporário próprio

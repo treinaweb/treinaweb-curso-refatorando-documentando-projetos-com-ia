@@ -132,7 +132,7 @@ recomendação estão listadas.
     rodar `node dist/server.js`; o `npm start` compila antes (`prestart`). A remoção de tipos nativa
     foi descartada por ora: exigiria Node >= 22.18 e imports com `.ts`.
   - **Node 24:** adiado. A pipeline escolhida não depende dele; a decisão volta na etapa 2.
-    `.nvmrc` e `engines` não mudaram.
+    `.nvmrc` e `engines` não mudaram. (Entrou na etapa 2.)
   - **Histórico:** os movimentos foram para um commit próprio, antes das factories. Envolver o corpo
     dos módulos numa função reindenta tudo, e o Git deixa de detectar o rename num commit só (mesmo
     com `-w`).
@@ -238,7 +238,7 @@ recomendação estão listadas.
   Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como os
   testes atualizados descrevem.
 
-## Etapa 2: Express 5
+## Etapa 2: Express 5 (concluída)
 
 - **Change sugerida:** `upgrade-express-5`
 - **Depende de:** etapa 3.
@@ -247,10 +247,18 @@ recomendação estão listadas.
 - **Escopo:** `express@5` + `@types/express@5` (hoje na 4, entrou na etapa 1); ajustar o que o
   Express 5 muda, preservando as respostas. Rever a decisão do Node 24 (adiada na etapa 1).
 - **Fora de escopo:** reescrever handlers em `async` (etapa 6).
-- **Decisões tomadas:** preservar todas as respostas. Nenhum teste muda.
-- **Decisões em aberto:** manter o *query parser* `extended` (`app.set('query parser', 'extended')`)
-  ou adotar o `simple` padrão. Recomendação: o `simple`, se os testes continuarem passando, já que a
-  etapa 3 rejeita a busca repetida; senão, manter o `extended`.
+- **Decisões tomadas:**
+  - Preservar todas as respostas. Nenhum teste mudou.
+  - **Query parser `extended`**, fixado no `createApp`. Com o `simple`, um teste falhava:
+    `?busca[x]=cabo` virava a chave literal `busca[x]` e respondia 200 com todos os produtos, em vez
+    do `400 Busca invalida` do spec `validacao-entrada`. Trocar para o `simple` é uma change própria
+    de contrato.
+  - **Node 24 nesta etapa** (decisão do usuário, junto com o Express 5): `.nvmrc` 24,
+    `engines.node` `>=24.11.0` e `@types/node` 24. O `express` fica fixado em versão exata (`5.3.0`),
+    como antes.
+- **Decisões em aberto:** nenhuma.
+- **Observações:** o `npm audit` foi de 14 para 13 vulnerabilidades (saiu a moderada do Express 4).
+  As 13 restantes vêm todas do `sqlite3` 5 e saem na etapa 4.
 - **Riscos:**
   - Sem corpo, o `req.body` passa a ser `undefined` → já tratado pelos schemas da etapa 3; conferir
     as rotas sem schema.
@@ -418,6 +426,8 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
   `npm audit`; `better-sqlite3` 13.2.0 (Node >= 22); `node:sqlite` disponível no Node 22.15 e no 24.18,
   mas com `ExperimentalWarning` nos dois.
 - **Zod:** 4.6.7.
+- **`sqlite3` 5.1.7 no Node 24.18** (Linux x64): instala por binário pronto e funciona sem recompilar
+  (usa N-API). Verificado na etapa 2.
 - **Vitest 5** exige Node `^22.12.0 || ^24 || >=26`. TypeScript 7.0.2 funciona com `allowJs` no
   `typecheck`.
 - **Comportamento atual que vai mudar na etapa 3** (verificado no código): ids em texto (`"1"`)
@@ -431,7 +441,7 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | 0. Testes de caracterização | `add-characterization-tests` | concluída (`2026-11-18-add-characterization-tests`) |
 | 1. Fundação | `refactor-foundation` | concluída (`2026-11-18-refactor-foundation`) |
 | 3. Validação com Zod e correções explícitas | `validation-and-explicit-fixes` | concluída (`2026-11-18-validation-and-explicit-fixes`) |
-| 2. Express 5 | `upgrade-express-5` | pendente |
+| 2. Express 5 | `upgrade-express-5` | concluída (`upgrade-express-5`) |
 | 4. Camada de dados | `data-layer-repositories` | pendente |
 | 5. Domínio de preços | `pricing-domain` | pendente |
 | 6. Camada HTTP e services | `http-layer-services` | pendente |

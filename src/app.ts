@@ -26,7 +26,8 @@ export interface AppDeps {
 /**
  * Cria o app com o banco informado.
  *
- * Monta, em ordem: `express.json()`, o log de cada requisicao no console
+ * Fixa o query parser em `extended` e monta, em ordem: `express.json()`, o
+ * log de cada requisicao no console
  * (`<ISO> <METODO> <URL>`), as rotas legadas (produtos, `/frete`, resumo,
  * relatorio e cancelamento, em src/routes/legado.js), `/clientes` e
  * `/pedidos`. As rotas e respostas estao documentadas nos routers e no README.
@@ -40,6 +41,12 @@ export interface AppDeps {
  */
 export function createApp({ db }: AppDeps): express.Express {
   const app = express()
+  // Query parser `extended` (qs), o padrao do Express 4. O padrao do Express 5
+  // (`simple`, node:querystring) nao entende colchetes: `?busca[x]=cabo` viraria
+  // a chave literal `busca[x]` e a rota devolveria todos os produtos, em vez do
+  // `400 Busca invalida` do spec validacao-entrada. Nao remova sem uma change
+  // de contrato.
+  app.set('query parser', 'extended')
   app.use(express.json())
   app.use((req: Request, _res: Response, next: NextFunction) => {
     console.log(new Date().toISOString() + ' ' + req.method + ' ' + req.url)
