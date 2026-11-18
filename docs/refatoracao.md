@@ -270,7 +270,7 @@ recomendação estão listadas.
 
 ## Etapa 4: Camada de dados (concluída)
 
-- **Change sugerida:** `data-layer-repositories`
+- **Change sugerida:** `data-layer-repositories` (arquivada em `2026-11-18-data-layer-repositories`)
 - **Depende de:** etapa 2.
 - **Objetivo:** tirar o SQL dos handlers, parametrizar tudo e dar atomicidade às operações de pedido.
 - **Escopo:**
@@ -459,7 +459,7 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | 1. Fundação | `refactor-foundation` | concluída (`2026-11-18-refactor-foundation`) |
 | 3. Validação com Zod e correções explícitas | `validation-and-explicit-fixes` | concluída (`2026-11-18-validation-and-explicit-fixes`) |
 | 2. Express 5 | `upgrade-express-5` | concluída (`2026-11-18-upgrade-express-5`) |
-| 4. Camada de dados | `data-layer-repositories` | concluída (`data-layer-repositories`) |
+| 4. Camada de dados | `data-layer-repositories` | concluída (`2026-11-18-data-layer-repositories`) |
 | 5. Domínio de preços | `pricing-domain` | pendente |
 | 6. Camada HTTP e services | `http-layer-services` | pendente |
 | 7. TypeScript estrito | `typescript-strict` | pendente |
