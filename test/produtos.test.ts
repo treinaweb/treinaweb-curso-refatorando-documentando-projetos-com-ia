@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { api, SEED_PRODUTOS } from './helpers'
+import { api, appComBanco, SEED_PRODUTOS } from './helpers'
 
 describe('GET /produtos', () => {
   it('lista todos os produtos do seed', async () => {
@@ -103,6 +103,18 @@ describe('GET /produtos/:id', () => {
   })
 })
 
-describe('produtos: lacunas', () => {
-  it.todo('erro 500 "Erro ao buscar produto" em GET /produtos/:id exige simular falha do SQLite')
+describe('produtos: falhas do banco', () => {
+  it('GET /produtos devolve 500 Erro ao buscar produtos', async () => {
+    const api = await appComBanco('DROP TABLE produtos')
+    const res = await api().get('/produtos')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao buscar produtos' })
+  })
+
+  it('GET /produtos/:id devolve 500 Erro ao buscar produto', async () => {
+    const api = await appComBanco('DROP TABLE produtos')
+    const res = await api().get('/produtos/1')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao buscar produto' })
+  })
 })

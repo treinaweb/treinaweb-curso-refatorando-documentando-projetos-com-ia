@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { api, SEED_CLIENTES } from './helpers'
+import { api, appComBanco, SEED_CLIENTES } from './helpers'
 
 // routes/clientes.js usa o formato de erro `{ error }` (o legado usa `{ erro }`).
 
@@ -159,6 +159,25 @@ describe('POST /clientes', () => {
   })
 })
 
-describe('clientes: lacunas', () => {
-  it.todo('erros 500 "Erro ao listar/buscar/salvar cliente" exigem simular falha do SQLite')
+describe('clientes: falhas do banco (formato { error })', () => {
+  it('GET /clientes devolve 500 Erro ao listar clientes', async () => {
+    const api = await appComBanco('DROP TABLE clientes')
+    const res = await api().get('/clientes')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ error: 'Erro ao listar clientes' })
+  })
+
+  it('GET /clientes/:id devolve 500 Erro ao buscar cliente', async () => {
+    const api = await appComBanco('DROP TABLE clientes')
+    const res = await api().get('/clientes/1')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ error: 'Erro ao buscar cliente' })
+  })
+
+  it('POST /clientes devolve 500 Erro ao salvar cliente', async () => {
+    const api = await appComBanco('DROP TABLE clientes')
+    const res = await api().post('/clientes').send({ nome: 'A', email: 'a@x', cep: '01310100' })
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ error: 'Erro ao salvar cliente' })
+  })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { api, CLIENTE, criarPedido, estoqueDe } from './helpers'
+import { api, appComBanco, CLIENTE, criarPedido, estoqueDe } from './helpers'
 
 // Ciclo de vida: criado -> cancelado (so a partir de criado). Pedidos sao
 // cancelados, nunca excluidos.
@@ -74,7 +74,28 @@ describe('POST /pedidos/:id/cancelar', () => {
   it.todo(
     'pedido sem itens nunca responde (o loop de devolucao nao chama res.json); inalcancavel pela API, que exige itens',
   )
-  it.todo('erros 500 "Erro ao cancelar pedido" exigem simular falha do SQLite')
+})
+
+/** Pedido gravado direto no banco (id 1), com status `criado`. */
+const PEDIDO_GRAVADO =
+  "INSERT INTO pedidos (cliente_id, subtotal, desconto, frete, total, status, criado_em) VALUES (1, 50, 0, 15, 65, 'criado', '2026-01-01T00:00:00.000Z');"
+
+describe('POST /pedidos/:id/cancelar: falhas do banco', () => {
+  it('devolve 500 Erro ao cancelar pedido quando a leitura do pedido falha', async () => {
+    const api = await appComBanco('DROP TABLE pedidos')
+    const res = await api().post('/pedidos/1/cancelar')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao cancelar pedido' })
+  })
+
+  it('devolve 500 Erro ao cancelar pedido quando a mudanca de status falha', async () => {
+    const api = await appComBanco(
+      PEDIDO_GRAVADO + " CREATE TRIGGER falha BEFORE UPDATE ON pedidos BEGIN SELECT RAISE(ABORT, 'falha simulada'); END;",
+    )
+    const res = await api().post('/pedidos/1/cancelar')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao cancelar pedido' })
+  })
 })
 
 describe('DELETE /pedidos/:id (desativado de proposito)', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { api, CLIENTE, criarPedido } from './helpers'
+import { api, appComBanco, CLIENTE, criarPedido } from './helpers'
 
 // GET /pedidos/:id/resumo (app.js) recalcula subtotal e desconto a partir dos
 // itens gravados (nao le pedidos.desconto/total); o frete vem do valor gravado.
@@ -132,6 +132,22 @@ describe('GET /pedidos/:id/resumo', () => {
   })
 })
 
-describe('GET /pedidos/:id/resumo: lacunas', () => {
-  it.todo('erro 500 "Erro ao gerar resumo" na consulta dos itens exige simular falha do SQLite')
+/** Pedido gravado direto no banco (id 1), para testar falhas na leitura dos itens. */
+const PEDIDO_GRAVADO =
+  "INSERT INTO pedidos (cliente_id, subtotal, desconto, frete, total, status, criado_em) VALUES (1, 50, 0, 15, 65, 'criado', '2026-01-01T00:00:00.000Z');"
+
+describe('GET /pedidos/:id/resumo: falhas do banco', () => {
+  it('devolve 500 Erro ao gerar resumo quando a leitura do pedido falha', async () => {
+    const api = await appComBanco('DROP TABLE pedidos')
+    const res = await api().get('/pedidos/1/resumo')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao gerar resumo' })
+  })
+
+  it('devolve 500 Erro ao gerar resumo quando so a leitura dos itens falha', async () => {
+    const api = await appComBanco(PEDIDO_GRAVADO + ' DROP TABLE itens_pedido;')
+    const res = await api().get('/pedidos/1/resumo')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao gerar resumo' })
+  })
 })

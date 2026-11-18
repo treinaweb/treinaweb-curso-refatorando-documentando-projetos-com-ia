@@ -3,11 +3,14 @@
  *
  * Os testes so falam com a API por HTTP (supertest sobre o app) e importam
  * apenas deste arquivo; nao importam modulos internos (utils, descontos, db).
- * Este arquivo e o test/setup.ts sao os unicos que montam o app: cada arquivo
- * de teste roda num processo proprio, com um banco temporario novo (o
- * `abrirBanco` cria o schema e o seed nele), fechado e apagado pelo setup.
+ * Este arquivo e o test/setup.ts sao os unicos que montam o app e mexem no
+ * banco: cada arquivo de teste roda num processo proprio, com um banco
+ * temporario novo (o `abrirBanco` cria o schema e o seed nele), fechado e
+ * apagado pelo setup. `appComBanco` monta apps extras com bancos quebrados de
+ * proposito para as respostas a falhas do banco.
  */
 import { randomUUID } from 'node:crypto'
+import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import supertest from 'supertest'
@@ -15,16 +18,58 @@ import { expect } from 'vitest'
 import { createApp } from '../src/app'
 import { abrirBanco } from '../src/db'
 
-/** Arquivo do banco temporario deste arquivo de teste. */
-export const arquivo = path.join(os.tmpdir(), `loja-test-${process.pid}-${randomUUID()}.db`)
+type Banco = ReturnType<typeof abrirBanco>
 
-/** Conexao com o banco temporario (fechada no `afterAll` do test/setup.ts). */
-export const db = abrirBanco(arquivo)
+/** Bancos temporarios abertos por este arquivo de teste (fechados pelo setup). */
+const bancos: { db: Banco; arquivo: string }[] = []
 
-const app = createApp({ db })
+/**
+ * Abre um banco temporario novo (schema + seed) e o registra para
+ * {@link fecharBancos}.
+ *
+ * @returns A conexao aberta.
+ */
+const abrirTemporario = (): Banco => {
+  const arquivo = path.join(os.tmpdir(), `loja-test-${process.pid}-${randomUUID()}.db`)
+  const db = abrirBanco(arquivo)
+  bancos.push({ db, arquivo })
+  return db
+}
+
+const app = createApp({ db: abrirTemporario() })
 
 /** Cliente HTTP sobre o app (porta efemera aberta e fechada pelo supertest). */
 export const api = () => supertest(app)
+
+/**
+ * App proprio sobre um banco temporario quebrado de proposito, para testar as
+ * respostas a falhas do banco so pelo HTTP. `preparar` e SQL executado depois
+ * do seed (por exemplo `DROP TABLE produtos` ou um trigger com
+ * `RAISE(ABORT, ...)`); vazio, o banco fica intacto.
+ *
+ * @param preparar SQL de preparo (um ou mais comandos).
+ * @returns Cliente HTTP sobre esse app.
+ */
+export const appComBanco = async (preparar: string) => {
+  const db = abrirTemporario()
+  if (preparar) {
+    await new Promise<void>((resolve, reject) => {
+      db.exec(preparar, (err: Error | null) => (err ? reject(err) : resolve()))
+    })
+  }
+  const appQuebrado = createApp({ db })
+  return () => supertest(appQuebrado)
+}
+
+/** Fecha e apaga todos os bancos temporarios deste arquivo de teste. */
+export const fecharBancos = async () => {
+  for (const { db, arquivo } of bancos.splice(0)) {
+    await new Promise<void>((resolve, reject) => {
+      db.close((err: Error | null) => (err ? reject(err) : resolve()))
+    })
+    fs.rmSync(arquivo, { force: true })
+  }
+}
 
 /** Produtos do seed (src/db), na ordem de insercao: `id` = posicao + 1. */
 export const SEED_PRODUTOS = [

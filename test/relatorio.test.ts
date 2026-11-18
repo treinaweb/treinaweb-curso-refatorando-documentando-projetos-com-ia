@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { api, CLIENTE, criarPedido } from './helpers'
+import { api, appComBanco, CLIENTE, criarPedido } from './helpers'
 
 // GET /relatorios/vendas (app.js). Este arquivo tem banco proprio e os testes
 // sao ACUMULATIVOS, em sequencia: cada um parte dos pedidos criados pelos anteriores.
@@ -63,5 +63,13 @@ describe('GET /relatorios/vendas', () => {
     expect(res.body.geral.faturamento).not.toBe(913.63)
   })
 
-  it.todo('erro 500 "Erro ao gerar relatorio" exige simular falha do SQLite')
+})
+
+describe('GET /relatorios/vendas: falhas do banco', () => {
+  it('devolve 500 Erro ao gerar relatorio quando a consulta dos pedidos falha', async () => {
+    const api = await appComBanco('DROP TABLE pedidos')
+    const res = await api().get('/relatorios/vendas')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao gerar relatorio' })
+  })
 })

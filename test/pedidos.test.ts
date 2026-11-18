@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { api, CLIENTE, criarPedido, estoqueDe, ISO_8601, postPedido } from './helpers'
+import { api, appComBanco, CLIENTE, criarPedido, estoqueDe, ISO_8601, postPedido } from './helpers'
 
 // POST /pedidos (routes/pedidos.js) e a fonte canonica das regras de preco:
 // total = subtotal - desconto + frete, frete sobre o subtotal ANTES do desconto,
@@ -341,9 +341,47 @@ describe('POST /pedidos: efeitos e GET /pedidos/:id', () => {
   })
 })
 
-describe('POST /pedidos e GET /pedidos/:id: lacunas (exigem simular falha do SQLite)', () => {
+/** Pedido gravado direto no banco (id 1), para testar falhas na leitura dos itens. */
+const PEDIDO_GRAVADO =
+  "INSERT INTO pedidos (cliente_id, subtotal, desconto, frete, total, status, criado_em) VALUES (1, 50, 0, 15, 65, 'criado', '2026-01-01T00:00:00.000Z');"
+
+describe('POST /pedidos e GET /pedidos/:id: falhas do banco', () => {
+  it('GET /pedidos/:id devolve 500 Erro ao buscar pedido', async () => {
+    const api = await appComBanco('DROP TABLE pedidos')
+    const res = await api().get('/pedidos/1')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao buscar pedido' })
+  })
+
+  it('GET /pedidos/:id devolve 500 Erro ao buscar itens quando so os itens falham', async () => {
+    const api = await appComBanco(PEDIDO_GRAVADO + ' DROP TABLE itens_pedido;')
+    const res = await api().get('/pedidos/1')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao buscar itens' })
+  })
+
+  it('POST /pedidos devolve 500 Erro interno quando a leitura do cliente falha', async () => {
+    const api = await appComBanco('DROP TABLE clientes')
+    const res = await api().post('/pedidos').send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 1 }] })
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro interno' })
+  })
+
+  it('POST /pedidos devolve 500 Erro interno quando a leitura dos produtos falha', async () => {
+    const api = await appComBanco('DROP TABLE produtos')
+    const res = await api().post('/pedidos').send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 1 }] })
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro interno' })
+  })
+
+  it('POST /pedidos devolve 500 Erro ao salvar pedido quando a gravacao do pedido falha', async () => {
+    const api = await appComBanco('DROP TABLE pedidos')
+    const res = await api().post('/pedidos').send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 1 }] })
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao salvar pedido' })
+  })
+
   it.todo(
     'falha num insert/update do loop devolve 500 "Pedido criado com erros" com o pedido ja gravado (sem transacao)',
   )
-  it.todo('erros 500 "Erro interno", "Erro ao salvar pedido", "Erro ao buscar pedido" e "Erro ao buscar itens"')
 })
