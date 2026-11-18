@@ -9,12 +9,15 @@
 
 var express = require('express')
 var descontos = require('../descontos')
-var utils = require('../utils')
 
 /**
- * Cria o router de pedidos sobre a conexao informada.
+ * Cria o router de pedidos sobre os repositories informados.
  *
- * @param {import('sqlite3').Database} db Conexao aberta (`abrirBanco`).
+ * Os handlers sao `async`; toda chamada a repository fica num `try` que
+ * responde a mensagem 500 da operacao (sem ele, o Express 5 responderia 500
+ * em HTML).
+ *
+ * @param {import('../repositories').Repositorios} r Repositories (src/repositories/).
  * @param {Object} v Validadores de entrada (middlewares montados em src/app.ts
  *   a partir de src/http/schemas/).
  * @param {import('express').RequestHandler} v.idPedido `:id` de pedido (404 `Pedido nao encontrado`).
@@ -22,7 +25,7 @@ var utils = require('../utils')
  *   (src/http/schemas/pedido.ts; 400 com a mensagem do primeiro problema).
  * @returns {import('express').Router} Router com `GET /:id` e `POST /`.
  */
-function createPedidosRouter(db, v) {
+function createPedidosRouter(r, v) {
   var router = express.Router()
 
   /**
@@ -38,24 +41,24 @@ function createPedidosRouter(db, v) {
    * @param {import('express').Request} req `req.params.id`: id do pedido.
    * @param {import('express').Response} res
    */
-  function getPedido(req, res) {
-    db.get('SELECT * FROM pedidos WHERE id = ?', [req.params.id], function(err, pedido) {
-      if (err) {
-        console.log(err)
-        return res.status(500).json({erro: 'Erro ao buscar pedido'})
-      }
-      if (!pedido) {
-        return res.status(404).json({erro: 'Pedido nao encontrado'})
-      }
-      db.all('SELECT i.produto_id, p.nome, i.quantidade, i.preco_unitario FROM itens_pedido i JOIN produtos p ON p.id = i.produto_id WHERE i.pedido_id = ?', [pedido.id], function(err, itens) {
-        if (err) {
-          console.log(err)
-          return res.status(500).json({erro: 'Erro ao buscar itens'})
-        }
-        pedido.itens = itens
-        res.json(pedido)
-      })
-    })
+  async function getPedido(req, res) {
+    var pedido
+    try {
+      pedido = await r.pedidos.buscar(req.params.id)
+    } catch (err) {
+      console.log(err)
+      return res.status(500).json({erro: 'Erro ao buscar pedido'})
+    }
+    if (!pedido) {
+      return res.status(404).json({erro: 'Pedido nao encontrado'})
+    }
+    try {
+      pedido.itens = await r.pedidos.itensDoPedido(pedido.id)
+    } catch (err) {
+      console.log(err)
+      return res.status(500).json({erro: 'Erro ao buscar itens'})
+    }
+    res.json(pedido)
   }
 
   router.get('/:id', v.idPedido, getPedido)
@@ -78,8 +81,8 @@ function createPedidosRouter(db, v) {
    * - `total` = subtotal - desconto + frete.
    *
    * Efeitos: insere o pedido com status `criado`, insere os itens e baixa o
-   * estoque de cada produto. Nao ha transacao: se um insert/update falhar no
-   * meio, o pedido fica gravado (resposta 500 'Pedido criado com erros').
+   * estoque de cada produto, numa transacao (`r.pedidos.criar`): se qualquer
+   * gravacao falhar, nada fica gravado e a resposta e 500 'Erro ao salvar pedido'.
    *
    * Respostas:
    * - 201: `{ id, cliente_id, subtotal, desconto, frete, total, status: 'criado' }`
@@ -88,126 +91,105 @@ function createPedidosRouter(db, v) {
    *   `produto_id invalido no item N`, `Quantidade invalida no item N`
    * - 400: `Estoque insuficiente para <produto>`
    * - 404: `Cliente nao encontrado`, `Produto <id> nao encontrado`
-   * - 500: `Erro interno`, `Erro ao salvar pedido`, `Pedido criado com erros`
+   * - 500: `Erro interno` (leitura do cliente ou dos produtos),
+   *   `Erro ao salvar pedido` (gravacao)
    * (todas no formato `{ erro: '...' }`)
-   *
-   * Atencao: varios SQLs aqui sao concatenados (codigo legado, nao copie).
    *
    * @todo Diverge de utils.calcula_frete: a regra de frete abaixo e uma copia
    *   inline da funcao de utils.js. Hoje produzem o mesmo resultado; ao mudar
    *   uma, alinhe a outra (esta e a que vale para o valor cobrado).
    */
-  router.post('/', v.criarPedido, function(req, res) {
+  router.post('/', v.criarPedido, async function(req, res) {
     var inicio = Date.now()
     var body = req.body
     var cliente_id = body.cliente_id
     var itens = body.itens
 
-    utils.buscar_cliente(db, cliente_id, function(err, cliente) {
-      if (err) {
-        console.log(err)
-        return res.status(500).json({erro: 'Erro interno'})
+    var cliente
+    var produtos
+    try {
+      cliente = await r.clientes.buscarCompleto(cliente_id)
+      if (cliente) {
+        produtos = await r.produtos.buscarVarios(itens.map(function(item) { return item.produto_id }))
       }
-      if (!cliente) {
-        return res.status(404).json({erro: 'Cliente nao encontrado'})
+    } catch (err) {
+      console.log(err)
+      return res.status(500).json({erro: 'Erro interno'})
+    }
+    if (!cliente) {
+      return res.status(404).json({erro: 'Cliente nao encontrado'})
+    }
+    var tmp2 = {}
+    for (var j = 0; j < produtos.length; j++) {
+      tmp2[produtos[j].id] = produtos[j]
+    }
+    var subtotal = 0
+    for (var k = 0; k < itens.length; k++) {
+      var p = tmp2[itens[k].produto_id]
+      if (!p) {
+        return res.status(404).json({erro: 'Produto ' + itens[k].produto_id + ' nao encontrado'})
       }
-      var ids = []
-      for (var i = 0; i < itens.length; i++) {
-        ids.push(itens[i].produto_id)
+      if (p.estoque < itens[k].quantidade) {
+        return res.status(400).json({erro: 'Estoque insuficiente para ' + p.nome})
       }
-      db.all('SELECT * FROM produtos WHERE id IN (' + ids.join(',') + ')', function(err, produtos) {
-        if (err) {
-          console.log(err)
-          return res.status(500).json({erro: 'Erro interno'})
-        }
-        var tmp2 = {}
-        for (var j = 0; j < produtos.length; j++) {
-          tmp2[produtos[j].id] = produtos[j]
-        }
-        var subtotal = 0
-        for (var k = 0; k < itens.length; k++) {
-          var p = tmp2[itens[k].produto_id]
-          if (!p) {
-            return res.status(404).json({erro: 'Produto ' + itens[k].produto_id + ' nao encontrado'})
-          }
-          if (p.estoque < itens[k].quantidade) {
-            return res.status(400).json({erro: 'Estoque insuficiente para ' + p.nome})
-          }
-          itens[k].preco_unitario = p.preco
-          subtotal = subtotal + p.preco * itens[k].quantidade
-        }
-        subtotal = Number(subtotal.toFixed(2))
+      itens[k].preco_unitario = p.preco
+      subtotal = subtotal + p.preco * itens[k].quantidade
+    }
+    subtotal = Number(subtotal.toFixed(2))
 
-        var desconto = 0
-        if (cliente.tipo == 'comum') {
-          if (subtotal >= 500) {
-            desconto = Number((subtotal * 0.05).toFixed(2))
-          }
-        } else {
-          var fn = descontos['desconto_' + cliente.tipo]
-          if (fn) {
-            desconto = fn(subtotal, itens)
-          }
-        }
+    var desconto = 0
+    if (cliente.tipo == 'comum') {
+      if (subtotal >= 500) {
+        desconto = Number((subtotal * 0.05).toFixed(2))
+      }
+    } else {
+      var fn = descontos['desconto_' + cliente.tipo]
+      if (fn) {
+        desconto = fn(subtotal, itens)
+      }
+    }
 
-        // nao mexer: frete gratis olha o subtotal, combinado com o comercial
-        var frete = 0
-        if (subtotal < 300) {
-          var faixa = parseInt(cliente.cep.substring(0, 1))
-          if (faixa <= 3) {
-            frete = 15
-          } else if (faixa <= 7) {
-            frete = 30
-          } else {
-            frete = 20
-          }
-        }
-        var total = Number((subtotal - desconto + frete).toFixed(2))
-        var agora = new Date().toISOString()
+    // nao mexer: frete gratis olha o subtotal, combinado com o comercial
+    var frete = 0
+    if (subtotal < 300) {
+      var faixa = parseInt(cliente.cep.substring(0, 1))
+      if (faixa <= 3) {
+        frete = 15
+      } else if (faixa <= 7) {
+        frete = 30
+      } else {
+        frete = 20
+      }
+    }
+    var total = Number((subtotal - desconto + frete).toFixed(2))
+    var agora = new Date().toISOString()
 
-        db.run("INSERT INTO pedidos (cliente_id, subtotal, desconto, frete, total, status, criado_em) VALUES (" + cliente.id + ", " + subtotal + ", " + desconto + ", " + frete + ", " + total + ", 'criado', '" + agora + "')", function(err) {
-          if (err) {
-            console.log(err)
-            return res.status(500).json({erro: 'Erro ao salvar pedido'})
-          }
-          var pedido_id = this.lastID
-          var feitos = 0
-          var deuErro = false
-          for (var m = 0; m < itens.length; m++) {
-            (function(item) {
-              db.run('INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (?, ?, ?, ?)', [pedido_id, item.produto_id, item.quantidade, item.preco_unitario], function(err) {
-                if (err) {
-                  deuErro = true
-                  console.log('erro item', err)
-                }
-                db.run('UPDATE produtos SET estoque = estoque - ' + item.quantidade + ' WHERE id = ' + item.produto_id, function(err2) {
-                  if (err2) {
-                    deuErro = true
-                    console.log(err2)
-                  }
-                  feitos++
-                  if (feitos == itens.length) {
-                    if (deuErro) {
-                      return res.status(500).json({erro: 'Pedido criado com erros'})
-                    }
-                    //console.log('pedido ok', pedido_id)
-                    console.log('pedido ' + pedido_id + ' (' + cliente.tipo + ') em ' + (Date.now() - inicio) + 'ms')
-                    res.status(201).json({
-                      id: pedido_id,
-                      cliente_id: cliente.id,
-                      subtotal: subtotal,
-                      desconto: desconto,
-                      frete: frete,
-                      total: total,
-                      status: 'criado'
-                    })
-                  }
-                })
-              })
-            })(itens[m])
-          }
+    var pedido_id
+    try {
+      pedido_id = await r.pedidos.criar({
+        cliente_id: cliente.id,
+        subtotal: subtotal,
+        desconto: desconto,
+        frete: frete,
+        total: total,
+        criado_em: agora,
+        itens: itens.map(function(item) {
+          return {produto_id: item.produto_id, quantidade: item.quantidade, preco_unitario: item.preco_unitario}
         })
       })
+    } catch (err) {
+      console.log(err)
+      return res.status(500).json({erro: 'Erro ao salvar pedido'})
+    }
+    console.log('pedido ' + pedido_id + ' (' + cliente.tipo + ') em ' + (Date.now() - inicio) + 'ms')
+    res.status(201).json({
+      id: pedido_id,
+      cliente_id: cliente.id,
+      subtotal: subtotal,
+      desconto: desconto,
+      frete: frete,
+      total: total,
+      status: 'criado'
     })
   })
 

@@ -381,7 +381,36 @@ describe('POST /pedidos e GET /pedidos/:id: falhas do banco', () => {
     expect(res.body).toEqual({ erro: 'Erro ao salvar pedido' })
   })
 
-  it.todo(
-    'falha num insert/update do loop devolve 500 "Pedido criado com erros" com o pedido ja gravado (sem transacao)',
-  )
+})
+
+/** Trigger que faz falhar qualquer comando do tipo informado na tabela. */
+const falhaEm = (momento: string, tabela: string) =>
+  `CREATE TRIGGER falha BEFORE ${momento} ON ${tabela} BEGIN SELECT RAISE(ABORT, 'falha simulada'); END;`
+
+// A criacao do pedido e atomica (antes, sem transacao, uma falha no meio
+// deixava o pedido gravado pela metade e respondia uma mensagem propria).
+describe('POST /pedidos: gravacao atomica', () => {
+  it('falha ao gravar um item devolve 500 Erro ao salvar pedido e nao grava nada', async () => {
+    const api = await appComBanco(falhaEm('INSERT', 'itens_pedido'))
+    const antes = (await api().get('/produtos/1')).body.estoque
+    const res = await api().post('/pedidos').send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 2 }] })
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao salvar pedido' })
+    expect((await api().get('/pedidos/1')).status).toBe(404)
+    expect((await api().get('/produtos/1')).body.estoque).toBe(antes)
+  })
+
+  it('falha ao baixar o estoque devolve 500 Erro ao salvar pedido e nao grava nada', async () => {
+    const api = await appComBanco(falhaEm('UPDATE', 'produtos'))
+    const mouse = (await api().get('/produtos/1')).body.estoque
+    const teclado = (await api().get('/produtos/2')).body.estoque
+    const res = await api()
+      .post('/pedidos')
+      .send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 1 }, { produto_id: 2, quantidade: 1 }] })
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao salvar pedido' })
+    expect((await api().get('/pedidos/1')).status).toBe(404)
+    expect((await api().get('/produtos/1')).body.estoque).toBe(mouse)
+    expect((await api().get('/produtos/2')).body.estoque).toBe(teclado)
+  })
 })

@@ -1,7 +1,7 @@
 # Loja API — contexto para agentes
 
 API REST interna de pedidos de uma loja de informática/periféricos.
-Node 24 + Express 5 + SQLite3 (callbacks, sem ORM), em transição de JS para TypeScript. Uso interno, **sem autenticação**.
+Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories `async`), em transição de JS para TypeScript. Uso interno, **sem autenticação**.
 
 ## Rodar e verificar
 
@@ -15,7 +15,8 @@ Node 24 + Express 5 + SQLite3 (callbacks, sem ORM), em transição de JS para Ty
   - São **testes de caracterização**: registram o comportamento HTTP atual (status, corpo inteiro, efeitos no estoque
     e nos valores gravados). Testam só pelo HTTP. Os `*.test.ts` importam só de `./helpers`; não importe `utils`, `descontos`
     nem `db` neles. Só `test/helpers.ts` e `test/setup.ts` montam o app (`createApp` + `abrirBanco`): cada arquivo roda
-    num processo com banco temporário próprio; o `loja.db` não é tocado.
+    num processo com banco temporário próprio; o `loja.db` não é tocado. Para falhas do banco, `appComBanco(sql)` monta
+    um app sobre um banco temporário quebrado de propósito (`DROP TABLE`, trigger com `RAISE(ABORT, ...)`).
   - Testes com nome iniciado por `[atual]` registram bugs ou divergências conhecidos, como são hoje. Corrigir um deles
     é mudança de comportamento: faça numa change própria, alterando o teste junto. Liste-os com `grep -rn "\[atual\]" test`.
   - Lacunas que o HTTP não alcança ficam como `it.todo`.
@@ -26,16 +27,18 @@ Node 24 + Express 5 + SQLite3 (callbacks, sem ORM), em transição de JS para Ty
 ## Mapa
 
 - `src/server.ts`: entrypoint (lê `PORTA`/`DB_PATH`, abre o banco, `listen`).
-- `src/app.ts`: `createApp({ db })`, middlewares (`express.json()`, log), validadores e montagem dos routers. O `db`
-  é sempre injetado: nenhum módulo abre conexão sozinho; os routers são factories `createXRouter(db, validadores)`.
+- `src/app.ts`: `createApp({ db })`, middlewares (`express.json()`, log), repositories, validadores e montagem dos
+  routers. O `db` é sempre injetado: nenhum módulo abre conexão sozinho; os routers são factories
+  `createXRouter(repositorios, validadores)`.
+- `src/repositories/`: `produtos`, `clientes` e `pedidos` (`criarRepositorios(db)`), o único lugar com SQL além do
+  schema. Métodos `async`; `pedidos.criar` e `pedidos.cancelar` são transacionais.
 - `src/http/schemas/`: schemas Zod da entrada (corpo, query e `:id`), com as mensagens de erro do projeto.
   `src/http/middlewares/validar.ts`: aplica um schema e responde o primeiro problema no formato da rota.
 - `src/routes/legado.js`: rotas de produtos, `/frete`, `/pedidos/:id/resumo`, `/relatorios/vendas`, `/pedidos/:id/cancelar`.
 - `src/routes/clientes.js`, `src/routes/pedidos.js`: rotas já migradas para router por recurso.
 - `src/descontos.js`: desconto por tipo de cliente (`desconto_<tipo>`, despacho dinâmico).
-- `src/utils.js`: `validaCep` (regra única de CEP, também usada pelos schemas), `calcula_frete`,
-  `buscar_cliente(db, id, cb)`.
-- `src/db/index.js`: `abrirBanco(arquivo)`: conexão, schema e seed.
+- `src/utils.js`: `validaCep` (regra única de CEP, também usada pelos schemas) e `calcula_frete`.
+- `src/db/index.ts`: `abrirBanco(arquivo)`: conexão (`better-sqlite3`), schema e seed (só em banco novo).
 - `docs/openapi.yaml`: contrato OpenAPI 3.0.3 das rotas (escrito à mão, estático; não é servido pela API).
 - `docs/refatoracao.md`: roteiro da refatoração (etapas, ordem, decisões tomadas e em aberto, registro de andamento).
 - `test/`: testes de caracterização em TypeScript (`*.test.ts`, um arquivo por área), `setup.ts` e `helpers.ts`.
@@ -68,9 +71,8 @@ o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o n
 - **Regras de preço duplicadas.** O desconto é recalculado em `POST /pedidos`, `GET /pedidos/:id/resumo`
   e `GET /relatorios/vendas` (em vez de ler `pedidos.desconto`); o frete existe em `src/routes/pedidos.js`
   e em `utils.calcula_frete`. As cópias já divergiram. Ao mudar uma regra, alinhe todas ou pergunte.
-- **SQL concatenado** em código legado (resumo, `buscar_cliente`, `POST /pedidos`). Hoje só recebe ids já validados
-  como inteiros pelos schemas, mas não copie esse padrão; a etapa 4 da refatoração o elimina.
-- **Sem transação** na criação/cancelamento de pedido; operações em loop com contador de callbacks.
+- **`await` de repository fora de `try`**: os handlers são `async`, e no Express 5 uma rejeição sem `catch` vira a página
+  HTML de 500 do Express, em vez do JSON da rota (spec `falhas-do-banco`).
 - Formato de erro inconsistente: `{erro}` no código legado, `{error}` em `src/routes/clientes.js`.
 - **Query parser fixado em `extended`** em `src/app.ts` (`app.set('query parser', 'extended')`). O padrão do
   Express 5 (`simple`) não entende colchetes e faria `?busca[x]=` listar todos os produtos em vez de
@@ -81,7 +83,12 @@ o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o n
 - Domínio e mensagens em português (sem acentos nas mensagens de erro).
 - Código novo: em TypeScript, no estilo de `src/routes/clientes.js` (`const`, arrow functions, `express.Router`) e
   **SQL sempre parametrizado com `?`**.
-- Rotas novas vão em `src/routes/`, como factory que recebe o `db`; não abra conexão fora de `src/server.ts` e dos testes.
+- Rotas novas vão em `src/routes/`, como factory que recebe os repositories; não abra conexão fora de `src/server.ts`
+  e dos testes.
+- **SQL só em `src/repositories/`** (e o schema em `src/db/`), sempre com `?`. Handlers não acessam o banco: chamam os
+  repositories injetados, e todo `await` de repository fica num `try` que responde a mensagem 500 da rota.
+  Gravações com mais de um comando vão numa `db.transaction` dentro do repository (a função da transação do
+  `better-sqlite3` é síncrona).
 - **Validação de entrada só por schema Zod** em `src/http/schemas/`, aplicada com `validar()` e **injetada nas factories**
   pelo `createApp` (o JS legado não consegue importar `.ts` sob o Vitest). Handlers não validam entrada à mão; ficam
   com as regras que dependem do banco. A resposta usa só o primeiro problema, com mensagem do projeto (nunca do

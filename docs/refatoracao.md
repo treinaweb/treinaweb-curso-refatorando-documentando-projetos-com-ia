@@ -268,7 +268,7 @@ recomendação estão listadas.
   sem vulnerabilidades novas.
   Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
-## Etapa 4: Camada de dados
+## Etapa 4: Camada de dados (concluída)
 
 - **Change sugerida:** `data-layer-repositories`
 - **Depende de:** etapa 2.
@@ -279,24 +279,39 @@ recomendação estão listadas.
   - **transações** na criação de pedido (pedido + itens + baixa de estoque) e no cancelamento
     (status + devolução);
   - troca ou upgrade do driver (veja as decisões em aberto) e o schema e o seed em `src/db/`.
-- **Fora de escopo:** mudar o schema das tabelas, criar índices (o `TODO` do `db.js` vira change
-  própria, se for desejado), regras de preço.
+- **Fora de escopo:** mudar o schema das tabelas, criar índices (o `TODO` do schema em `src/db/` vira
+  change própria, se for desejado), regras de preço.
 - **Decisões tomadas:**
   - Repositories com interface `Promise`, mesmo que o driver seja síncrono, para poder trocá-lo.
-  - Transações entram aqui. É a **única mudança de semântica** da etapa, e só aparece em caso de
-    falha do SQLite: a resposta `Pedido criado com erros`, com o pedido gravado pela metade, deixa de
-    existir. Isso não altera nenhum teste, porque esses caminhos são `it.todo`.
-- **Decisões em aberto:**
-  - **Driver:**
-
-    | Opção | Async? | Transações | Observação |
-    |---|---|---|---|
-    | `sqlite3` 6 + promisify | sim | manuais (`BEGIN`/`COMMIT`) | menor salto; corrige o `npm audit` atual (`node-gyp`) |
-    | `better-sqlite3` 13 | não (síncrono) | `db.transaction()` nativo | maduro e rápido; exige Node >= 22 |
-    | `node:sqlite` | não (síncrono) | manuais | sem dependência, mas emite `ExperimentalWarning` |
-
-    Recomendação: `better-sqlite3`, por ter transações nativas e simples atrás da interface `Promise`
-    dos repositories, ou `sqlite3` 6, se a prioridade for o menor salto.
+  - **Driver: `better-sqlite3` 13** (`db.transaction()` nativo). O `sqlite3` 6.0.1 foi descartado: o
+    binário pronto exige GLIBC 2.38 (a máquina de desenvolvimento tem 2.35) e ele ainda traz 5
+    vulnerabilidades altas (`node-gyp` → `tinyglobby` → `picomatch`). O `node:sqlite` foi descartado por
+    ser *release candidate* (estabilidade 1.2, fora do semver), embora não emita mais
+    `ExperimentalWarning` no Node 24.18.
+  - **Repositories em TS injetados nas factories** (`createXRouter(repositorios, validadores)`), pelo
+    mesmo motivo dos validadores: o JS legado não importa `.ts` sob o Vitest.
+  - **Handlers `async` já nesta etapa**, com `try/catch` que mantém a mensagem 500 de cada rota.
+    Trocar callback por `await` é o próprio trabalho de tirar o SQL do handler; fazer callback →
+    síncrono agora e síncrono → `async` na etapa 6 mexeria duas vezes nos mesmos handlers. Os
+    callbacks de banco e os contadores de callback já saem aqui.
+  - **Transações e mensagens:** na criação, qualquer falha na gravação faz rollback e responde
+    `500 Erro ao salvar pedido` (a resposta de pedido gravado pela metade deixou de existir); no
+    cancelamento, o rollback mantém o pedido `criado` e o estoque, e responde `500 Erro ao cancelar
+    pedido`. Specs `gravacao-pedidos` e `falhas-do-banco`.
+  - **Testes de falha do banco** (helper `appComBanco`, banco temporário quebrado com `DROP TABLE`
+    ou trigger com `RAISE`): as 15 mensagens 500 que não mudam foram caracterizadas no `sqlite3` 5
+    antes da troca; a atomicidade e as falhas que derrubavam o processo (itens do relatório e do
+    cancelamento) foram testadas depois. Nenhum teste existente mudou.
+- **Decisões em aberto:** nenhuma.
+- **Observações:**
+  - Duas falhas do banco derrubavam o processo (o erro era ignorado no callback e virava `TypeError`
+    fora do Express): a leitura dos itens no relatório e no cancelamento. As devoluções de estoque do
+    cancelamento ignoravam o erro e respondiam 200.
+  - A troca foi feita em bloco (driver, repositories e handlers), não handler a handler: a função da
+    transação do `better-sqlite3` é síncrona, e um adaptador provisório do `sqlite3` obrigaria a
+    escrever as transações duas vezes.
+  - O bloco comentado do `DELETE /pedidos/:id` em `src/routes/legado.js` ainda tem SQL: é o aviso de
+    que pedidos não são excluídos, e sua remoção fica para a etapa 8.
 - **Riscos:**
   - O driver síncrono deixa a interface `Promise` "artificial" → é aceito, em troca de poder trocar
     de driver.
@@ -361,8 +376,10 @@ recomendação estão listadas.
   - É a maior etapa → divisão por recurso.
   - O formato de erro (`{error}` só em clientes) se perder na centralização → o middleware recebe o
     formato da rota; os testes comparam o corpo inteiro.
-- **Pronto quando:** não existem mais callbacks de banco nem contadores de callback; `app.js` e
-  `routes/` legados foram removidos; `npm test` sem mudança nos testes.
+- **Pronto quando:** os `try/catch` por rota foram trocados pelo middleware de erro centralizado (os
+  callbacks de banco e os contadores de callback já saíram na etapa 4); os handlers legados de
+  `src/routes/` foram removidos; `npm test` sem mudança nos testes (inclusive os de falha do banco da
+  etapa 4).
   Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
 ## Etapa 7: TypeScript estrito
@@ -422,8 +439,8 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 - **Express 5** (documentação do projeto): `req.body` não é mais inicializado como `{}` sem corpo; o
   *query parser* padrão passa a ser `simple`; promises rejeitadas em handlers e middlewares vão para o
   middleware de erro. Versão atual: 5.3.0 (`@types/express` 5.0.6).
-- **SQLite:** `sqlite3` 6.0.1 (Node >= 20.17), que corrige a cadeia `node-gyp` apontada hoje pelo
-  `npm audit`; `better-sqlite3` 13.2.0 (Node >= 22); `node:sqlite` disponível no Node 22.15 e no 24.18,
+- **SQLite:** `sqlite3` 6.0.1 (Node >= 20.17); revisto na etapa 4: não corrige o `npm audit` (5 altas
+  pela cadeia `node-gyp`) e o binário pronto exige GLIBC 2.38; `better-sqlite3` 13.2.0 (Node >= 22); `node:sqlite` disponível no Node 22.15 e no 24.18,
   mas com `ExperimentalWarning` nos dois.
 - **Zod:** 4.6.7.
 - **`sqlite3` 5.1.7 no Node 24.18** (Linux x64): instala por binário pronto e funciona sem recompilar
@@ -442,7 +459,7 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | 1. Fundação | `refactor-foundation` | concluída (`2026-11-18-refactor-foundation`) |
 | 3. Validação com Zod e correções explícitas | `validation-and-explicit-fixes` | concluída (`2026-11-18-validation-and-explicit-fixes`) |
 | 2. Express 5 | `upgrade-express-5` | concluída (`2026-11-18-upgrade-express-5`) |
-| 4. Camada de dados | `data-layer-repositories` | pendente |
+| 4. Camada de dados | `data-layer-repositories` | concluída (`data-layer-repositories`) |
 | 5. Domínio de preços | `pricing-domain` | pendente |
 | 6. Camada HTTP e services | `http-layer-services` | pendente |
 | 7. TypeScript estrito | `typescript-strict` | pendente |

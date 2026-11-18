@@ -72,4 +72,17 @@ describe('GET /relatorios/vendas: falhas do banco', () => {
     expect(res.status).toBe(500)
     expect(res.body).toEqual({ erro: 'Erro ao gerar relatorio' })
   })
+
+  // Antes, o erro na leitura dos itens era ignorado e virava TypeError fora do
+  // Express, derrubando o processo.
+  it('falha na leitura dos itens devolve 500 e o processo continua atendendo', async () => {
+    const api = await appComBanco(
+      "INSERT INTO pedidos (cliente_id, subtotal, desconto, frete, total, status, criado_em) VALUES (1, 50, 0, 15, 65, 'criado', '2026-01-01T00:00:00.000Z'); DROP TABLE itens_pedido;",
+    )
+    const res = await api().get('/relatorios/vendas')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao gerar relatorio' })
+    const depois = await api().get('/produtos')
+    expect(depois.status).toBe(200)
+  })
 })

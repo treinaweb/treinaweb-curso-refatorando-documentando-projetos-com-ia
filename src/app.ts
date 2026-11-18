@@ -3,10 +3,13 @@
  *
  * `createApp({ db })` e o unico jeito de montar o app: o banco e injetado por
  * quem chama (src/server.ts em producao, test/helpers.ts nos testes), e nenhum
- * modulo abre conexao sozinho. Nao escuta em porta (veja src/server.ts).
+ * modulo abre conexao sozinho. Os repositories (src/repositories/, o unico
+ * lugar com SQL) sao criados aqui e injetados nas factories dos routers. Nao
+ * escuta em porta (veja src/server.ts).
  */
 import express, { type NextFunction, type Request, type Response } from 'express'
-import type { Database } from 'sqlite3'
+import type { Banco } from './db'
+import { criarRepositorios } from './repositories'
 import createClientesRouter = require('./routes/clientes')
 import createLegadoRouter = require('./routes/legado')
 import createPedidosRouter = require('./routes/pedidos')
@@ -20,7 +23,7 @@ import { criarPedidoSchema } from './http/schemas/pedido'
 /** Dependencias de `createApp`. */
 export interface AppDeps {
   /** Conexao aberta com `abrirBanco` (src/db). */
-  db: Database
+  db: Banco
 }
 
 /**
@@ -60,8 +63,9 @@ export function createApp({ db }: AppDeps): express.Express {
   const frete = validar({ schema: freteSchema, origem: 'query', formato: 'erro' })
   const busca = validar({ schema: buscaSchema, origem: 'query', formato: 'erro' })
 
-  app.use(createLegadoRouter(db, { busca, idProduto, idPedido, frete }))
-  app.use('/clientes', createClientesRouter(db, { idCliente, criarCliente }))
-  app.use('/pedidos', createPedidosRouter(db, { idPedido, criarPedido }))
+  const r = criarRepositorios(db)
+  app.use(createLegadoRouter(r, { busca, idProduto, idPedido, frete }))
+  app.use('/clientes', createClientesRouter(r, { idCliente, criarCliente }))
+  app.use('/pedidos', createPedidosRouter(r, { idPedido, criarPedido }))
   return app
 }

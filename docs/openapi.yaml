@@ -239,9 +239,9 @@ paths:
           4–7 R$ 30, 8–9 R$ 20.
         - `total` = subtotal − desconto + frete.
 
-        Grava o pedido com status `criado` e baixa o estoque dos produtos.
-        Não há transação: em caso de `500 Pedido criado com erros`, o pedido
-        já foi gravado.
+        Grava o pedido com status `criado`, os itens e a baixa de estoque dos
+        produtos numa transação: se qualquer gravação falhar, nada fica gravado
+        e a resposta é `500 Erro ao salvar pedido`.
 
         Validação (400, só o primeiro problema, nesta ordem): `cliente_id`,
         `itens`, e item a item (`produto_id` antes de `quantidade`). Ausente ou
@@ -303,19 +303,18 @@ paths:
                 produto:
                   value: { erro: Produto 999 nao encontrado }
         '500':
-          description: Erro no banco.
+          description: Erro no banco (nada fica gravado).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Erro'
               examples:
                 interno:
+                  summary: Falha na leitura do cliente ou dos produtos
                   value: { erro: Erro interno }
                 salvar:
+                  summary: Falha na gravação do pedido, dos itens ou da baixa de estoque (rollback)
                   value: { erro: Erro ao salvar pedido }
-                parcial:
-                  summary: Pedido gravado, mas algum item ou baixa de estoque falhou
-                  value: { erro: Pedido criado com erros }
 
   /pedidos/{id}:
     get:
@@ -419,8 +418,9 @@ paths:
       summary: Cancela o pedido e devolve o estoque
       description: |
         Só pedidos com status `criado` podem ser cancelados (`criado` →
-        `cancelado`). A quantidade de cada item volta ao estoque. Não há
-        transação.
+        `cancelado`). A quantidade de cada item volta ao estoque. Status e
+        estoque mudam numa transação: em caso de `500 Erro ao cancelar pedido`,
+        o pedido continua `criado` e o estoque não muda.
       parameters:
         - $ref: '#/components/parameters/IdPath'
       responses:

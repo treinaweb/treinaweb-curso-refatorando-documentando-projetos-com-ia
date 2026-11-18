@@ -72,7 +72,7 @@ describe('POST /pedidos/:id/cancelar', () => {
   })
 
   it.todo(
-    'pedido sem itens nunca responde (o loop de devolucao nao chama res.json); inalcancavel pela API, que exige itens',
+    'pedido sem itens: cancela sem devolver estoque (antes nunca respondia); inalcancavel pela API, que exige itens',
   )
 })
 
@@ -95,6 +95,39 @@ describe('POST /pedidos/:id/cancelar: falhas do banco', () => {
     const res = await api().post('/pedidos/1/cancelar')
     expect(res.status).toBe(500)
     expect(res.body).toEqual({ erro: 'Erro ao cancelar pedido' })
+  })
+})
+
+/** Item do pedido 1 (2 unidades do produto 1), gravado direto no banco. */
+const ITEM_GRAVADO = 'INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (1, 1, 2, 50);'
+
+// O cancelamento e atomico (antes, as devolucoes de estoque ignoravam o erro e
+// respondiam 200, e uma falha na leitura dos itens derrubava o processo).
+describe('POST /pedidos/:id/cancelar: gravacao atomica', () => {
+  it('falha ao devolver o estoque devolve 500 e nao cancela nem devolve nada', async () => {
+    const api = await appComBanco(
+      PEDIDO_GRAVADO +
+        ITEM_GRAVADO +
+        " CREATE TRIGGER falha BEFORE UPDATE ON produtos BEGIN SELECT RAISE(ABORT, 'falha simulada'); END;",
+    )
+    const estoque = (await api().get('/produtos/1')).body.estoque
+    const res = await api().post('/pedidos/1/cancelar')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao cancelar pedido' })
+    expect((await api().get('/pedidos/1')).body.status).toBe('criado')
+    expect((await api().get('/produtos/1')).body.estoque).toBe(estoque)
+  })
+
+  it('falha ao ler os itens devolve 500 e o pedido continua criado', async () => {
+    const api = await appComBanco(PEDIDO_GRAVADO + ' DROP TABLE itens_pedido;')
+    const res = await api().post('/pedidos/1/cancelar')
+    expect(res.status).toBe(500)
+    expect(res.body).toEqual({ erro: 'Erro ao cancelar pedido' })
+    // Sem a tabela de itens, o GET do pedido tambem falha; se o status tivesse
+    // sido gravado, a segunda tentativa daria 400 (status cancelado).
+    const segunda = await api().post('/pedidos/1/cancelar')
+    expect(segunda.status).toBe(500)
+    expect(segunda.body).toEqual({ erro: 'Erro ao cancelar pedido' })
   })
 })
 

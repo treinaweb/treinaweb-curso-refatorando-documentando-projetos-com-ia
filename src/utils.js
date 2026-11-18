@@ -1,34 +1,7 @@
 /**
- * @file Utilitarios compartilhados: busca de cliente, validacao de CEP,
- * calculo de frete e formatacao de moeda.
+ * @file Utilitarios compartilhados: validacao de CEP, calculo de frete e
+ * formatacao de moeda.
  */
-
-/**
- * @callback BuscarClienteCallback
- * @param {Error|null} err Erro do SQLite, ou `null`.
- * @param {Object} [cliente] Linha completa de `clientes` (`id`, `nome`, `email`,
- *   `cep`, `tipo`), ou `undefined` se nao existir.
- */
-
-/**
- * Busca um cliente pelo id (todas as colunas).
- *
- * Atencao: o `id` e concatenado direto no SQL (codigo legado, nao copie o
- * padrao). Quem chama deve garantir que e um valor numerico.
- *
- * @param {import('sqlite3').Database} db Conexao aberta (`abrirBanco`).
- * @param {number|string} id Id do cliente.
- * @param {BuscarClienteCallback} cb Chamado com `(err, cliente)`.
- * @returns {void}
- */
-function buscar_cliente(db, id, cb) {
-    db.get('SELECT * FROM clientes WHERE id = ' + id, function(err, row) {
-        if (err) {
-            return cb(err)
-        }
-        cb(null, row)
-    })
-}
 
 /** CEP aceito, depois do `trim`: 5 digitos, hifen opcional, 3 digitos. */
 const FORMATO_CEP = /^\d{5}-?\d{3}$/
@@ -94,7 +67,6 @@ function formata_moeda(valor) {
 }
 
 module.exports = {
-    buscar_cliente: buscar_cliente,
     validaCep,
     calcula_frete: calcula_frete,
     formata_moeda: formata_moeda

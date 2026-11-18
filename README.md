@@ -1,6 +1,6 @@
 # Loja API
 
-API REST de pedidos da loja de informática e periféricos. Node 24 + Express 5 + SQLite.
+API REST de pedidos da loja de informática e periféricos. Node 24 + Express 5 + SQLite (`better-sqlite3`).
 
 Uso interno, **sem autenticação**. Não expor fora da rede da loja.
 
@@ -124,7 +124,8 @@ Erros `400`, só o primeiro problema, na ordem nome, email, CEP:
 **`POST /pedidos`**: body `{ cliente_id, itens: [{ produto_id, quantidade }] }`. `cliente_id`,
 `produto_id` e `quantidade` são números inteiros maiores que zero (texto como `"1"` não é aceito), e há
 ao menos um item. Campos extras são ignorados. Calcula subtotal, desconto, frete e total (veja
-[Regras](#regras)), grava o pedido com status `criado` e baixa o estoque.
+[Regras](#regras)), grava o pedido com status `criado` e baixa o estoque. A gravação é atômica:
+se qualquer parte falhar, nada fica gravado e a resposta é `500 {"erro":"Erro ao salvar pedido"}`.
 
 A validação responde só o primeiro problema, nesta ordem: `cliente_id`, `itens`, e item a item
 (`produto_id` antes de `quantidade`). Ausente ou `null` dá "obrigatorio"; qualquer outro valor fora do
@@ -143,7 +144,7 @@ curl -X POST http://localhost:3000/pedidos \
 |--------|-----------------------------------------------------------------------------------------|
 | 400    | `cliente_id obrigatorio`, `cliente_id invalido`, `Pedido sem itens`, `produto_id obrigatorio no item N`, `produto_id invalido no item N`, `Quantidade invalida no item N`, `Estoque insuficiente para <produto>` |
 | 404    | `Cliente nao encontrado`, `Produto <id> nao encontrado`                                |
-| 500    | `Erro interno`, `Erro ao salvar pedido`, `Pedido criado com erros`                     |
+| 500    | `Erro interno` (leitura do cliente ou dos produtos), `Erro ao salvar pedido` (gravação) |
 
 **`GET /pedidos/:id`**: o pedido como foi gravado, com os itens e o preço unitário da época da compra.
 
@@ -170,6 +171,8 @@ curl http://localhost:3000/pedidos/2/resumo
 > diferente do cobrado. A fonte da verdade é `GET /pedidos/:id`.
 
 **`POST /pedidos/:id/cancelar`**: muda o status de `criado` para `cancelado` e devolve o estoque dos itens.
+As duas coisas acontecem juntas: se qualquer parte falhar, o pedido continua `criado`, o estoque não muda e a
+resposta é `500 {"erro":"Erro ao cancelar pedido"}`.
 
 ```
 curl -X POST http://localhost:3000/pedidos/1/cancelar

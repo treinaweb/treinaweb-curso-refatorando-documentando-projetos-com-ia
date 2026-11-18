@@ -12,9 +12,13 @@ var descontos = require('../descontos')
 var utils = require('../utils')
 
 /**
- * Cria o router das rotas legadas sobre a conexao informada.
+ * Cria o router das rotas legadas sobre os repositories informados.
  *
- * @param {import('sqlite3').Database} db Conexao aberta (`abrirBanco`).
+ * Os handlers sao `async`; toda chamada a repository fica num `try` que
+ * responde a mensagem 500 da rota (sem ele, o Express 5 responderia 500 em
+ * HTML).
+ *
+ * @param {import('../repositories').Repositorios} r Repositories (src/repositories/).
  * @param {Object} v Validadores de entrada (middlewares montados em src/app.ts
  *   a partir de src/http/schemas/).
  * @param {import('express').RequestHandler} v.busca Query de `GET /produtos`
@@ -25,7 +29,7 @@ var utils = require('../utils')
  *   (src/http/schemas/frete.ts; 400 `CEP invalido` ou `Subtotal invalido`).
  * @returns {import('express').Router} Router montado na raiz por `createApp`.
  */
-function createLegadoRouter(db, v) {
+function createLegadoRouter(r, v) {
     var router = express.Router()
 
     /**
@@ -42,20 +46,15 @@ function createLegadoRouter(db, v) {
      * - 400: `{ erro: 'Busca invalida' }` (busca repetida ou objeto)
      * - 500: `{ erro: 'Erro ao buscar produtos' }`
      */
-    router.get('/produtos', v.busca, function(req, res) {
-        var sql = 'SELECT * FROM produtos'
-        var params = []
-        if (req.query.busca) {
-            sql = sql + ' WHERE nome LIKE ?'
-            params.push('%' + req.query.busca + '%')
+    router.get('/produtos', v.busca, async function(req, res) {
+        var rows
+        try {
+            rows = await r.produtos.listar(req.query.busca)
+        } catch (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro ao buscar produtos'})
         }
-        db.all(sql, params, function(err, rows) {
-            if (err) {
-                console.log(err)
-                return res.status(500).json({erro: 'Erro ao buscar produtos'})
-            }
-            res.json(rows)
-        })
+        res.json(rows)
     })
 
     /**
@@ -65,17 +64,18 @@ function createLegadoRouter(db, v) {
      * - 404: `{ erro: 'Produto nao encontrado' }`
      * - 500: `{ erro: 'Erro ao buscar produto' }`
      */
-    router.get('/produtos/:id', v.idProduto, function(req, res) {
-        db.get('SELECT * FROM produtos WHERE id = ?', [req.params.id], function(err, row) {
-            if (err) {
-                console.log(err)
-                return res.status(500).json({erro: 'Erro ao buscar produto'})
-            }
-            if (!row) {
-                return res.status(404).json({erro: 'Produto nao encontrado'})
-            }
-            res.json(row)
-        })
+    router.get('/produtos/:id', v.idProduto, async function(req, res) {
+        var row
+        try {
+            row = await r.produtos.buscar(req.params.id)
+        } catch (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro ao buscar produto'})
+        }
+        if (!row) {
+            return res.status(404).json({erro: 'Produto nao encontrado'})
+        }
+        res.json(row)
     })
 
     /**
@@ -108,58 +108,55 @@ function createLegadoRouter(db, v) {
      * - 404: `{ erro: 'Pedido nao encontrado' }`
      * - 500: `{ erro: 'Erro ao gerar resumo' }`
      *
-     * Atencao: o `id` e concatenado no SQL (codigo legado, nao copie o padrao).
-     *
      * @todo Diverge de POST /pedidos: aplica 5% ao cliente `comum` so com
      *   subtotal > 500 (la e >= 500). Num pedido `comum` de exatamente R$ 500,00,
      *   o resumo mostra desconto 0 e um total diferente do cobrado (a confirmar).
      */
-    router.get('/pedidos/:id/resumo', v.idPedido, function(req, res) {
-        db.get('SELECT p.*, c.nome, c.tipo FROM pedidos p JOIN clientes c ON c.id = p.cliente_id WHERE p.id = ' + req.params.id, function(err, ped) {
-            if (err) {
-                console.log(err)
-                return res.status(500).json({erro: 'Erro ao gerar resumo'})
+    router.get('/pedidos/:id/resumo', v.idPedido, async function(req, res) {
+        var ped
+        var itens
+        try {
+            ped = await r.pedidos.buscarParaResumo(req.params.id)
+            if (ped) {
+                itens = await r.pedidos.itensParaResumo(ped.id)
             }
-            if (!ped) {
-                return res.status(404).json({erro: 'Pedido nao encontrado'})
+        } catch (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro ao gerar resumo'})
+        }
+        if (!ped) {
+            return res.status(404).json({erro: 'Pedido nao encontrado'})
+        }
+        var sub = 0
+        var linhas = []
+        itens.forEach(function(i) {
+            sub = sub + i.quantidade * i.preco_unitario
+            linhas.push(i.quantidade + 'x ' + i.nome + ' - R$ ' + (i.quantidade * i.preco_unitario).toFixed(2))
+        })
+        sub = Number(sub.toFixed(2))
+        var desc = 0
+        if (ped.tipo == 'vip') {
+            desc = descontos.desconto_vip(sub)
+        } else if (ped.tipo == 'comum') {
+            if (sub > 500) {
+                desc = Number((sub * 0.05).toFixed(2))
             }
-            db.all('SELECT i.*, pr.nome FROM itens_pedido i JOIN produtos pr ON pr.id = i.produto_id WHERE i.pedido_id = ?', [ped.id], function(err, itens) {
-                if (err) {
-                    console.log(err)
-                    return res.status(500).json({erro: 'Erro ao gerar resumo'})
-                }
-                var sub = 0
-                var linhas = []
-                itens.forEach(function(i) {
-                    sub = sub + i.quantidade * i.preco_unitario
-                    linhas.push(i.quantidade + 'x ' + i.nome + ' - R$ ' + (i.quantidade * i.preco_unitario).toFixed(2))
-                })
-                sub = Number(sub.toFixed(2))
-                var desc = 0
-                if (ped.tipo == 'vip') {
-                    desc = descontos.desconto_vip(sub)
-                } else if (ped.tipo == 'comum') {
-                    if (sub > 500) {
-                        desc = Number((sub * 0.05).toFixed(2))
-                    }
-                } else {
-                    var f = descontos['desconto_' + ped.tipo]
-                    if (f) {
-                        desc = f(sub, itens)
-                    }
-                }
-                res.json({
-                    pedido: ped.id,
-                    cliente: ped.nome,
-                    tipo_cliente: ped.tipo,
-                    itens: linhas,
-                    subtotal: sub,
-                    desconto: desc,
-                    frete: ped.frete,
-                    total: Number((sub - desc + ped.frete).toFixed(2)),
-                    status: ped.status
-                })
-            })
+        } else {
+            var f = descontos['desconto_' + ped.tipo]
+            if (f) {
+                desc = f(sub, itens)
+            }
+        }
+        res.json({
+            pedido: ped.id,
+            cliente: ped.nome,
+            tipo_cliente: ped.tipo,
+            itens: linhas,
+            subtotal: sub,
+            desconto: desc,
+            frete: ped.frete,
+            total: Number((sub - desc + ped.frete).toFixed(2)),
+            status: ped.status
         })
     })
 
@@ -180,55 +177,55 @@ function createLegadoRouter(db, v) {
      *   `pedidos.desconto`, arredondando com `Math.round` para reais inteiros
      *   (la sao 2 casas). O faturamento pode nao bater com a soma de `pedidos.total`.
      */
-    router.get('/relatorios/vendas', function(req, res) {
-        db.all("SELECT p.*, c.tipo FROM pedidos p, clientes c WHERE c.id = p.cliente_id AND p.status != 'cancelado'", function(err, pedidos) {
-            if (err) {
-                console.log(err)
-                return res.status(500).json({erro: 'Erro ao gerar relatorio'})
+    router.get('/relatorios/vendas', async function(req, res) {
+        var pedidos
+        var itensPorPedido = []
+        try {
+            pedidos = await r.pedidos.listarAtivosComTipo()
+            for (var k = 0; k < pedidos.length; k++) {
+                itensPorPedido.push(await r.pedidos.itensDe(pedidos[k].id))
             }
-            if (pedidos.length == 0) {
-                return res.json({geral: {pedidos: 0, itens: 0, faturamento: 0}})
+        } catch (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro ao gerar relatorio'})
+        }
+        if (pedidos.length == 0) {
+            return res.json({geral: {pedidos: 0, itens: 0, faturamento: 0}})
+        }
+        var r2 = {}
+        pedidos.forEach(function(p, indice) {
+            var itens = itensPorPedido[indice]
+            var qtd = 0
+            for (var i = 0; i < itens.length; i++) {
+                qtd = qtd + itens[i].quantidade
             }
-            var r = {}
-            var x = 0
-            pedidos.forEach(function(p) {
-                db.all('SELECT * FROM itens_pedido WHERE pedido_id = ' + p.id, function(err, itens) {
-                    var qtd = 0
-                    for (var i = 0; i < itens.length; i++) {
-                        qtd = qtd + itens[i].quantidade
-                    }
-                    var d = 0
-                    if (p.tipo == 'vip') {
-                        d = Math.round(p.subtotal * 0.1)
-                    }
-                    if (p.tipo == 'comum' && p.subtotal >= 500) {
-                        d = Math.round(p.subtotal * 0.05)
-                    }
-                    if (p.tipo == 'atacado' && qtd >= 10) {
-                        d = Math.round(p.subtotal * 0.15)
-                    }
-                    if (!r[p.tipo]) {
-                        r[p.tipo] = {pedidos: 0, itens: 0, faturamento: 0}
-                    }
-                    r[p.tipo].pedidos++
-                    r[p.tipo].itens += qtd
-                    r[p.tipo].faturamento += p.subtotal - d + p.frete
-                    x++
-                    if (x == pedidos.length) {
-                        var geral = {pedidos: 0, itens: 0, faturamento: 0}
-                        for (var t in r) {
-                            r[t].faturamento = Number(r[t].faturamento.toFixed(2))
-                            geral.pedidos += r[t].pedidos
-                            geral.itens += r[t].itens
-                            geral.faturamento += r[t].faturamento
-                        }
-                        geral.faturamento = Number(geral.faturamento.toFixed(2))
-                        r.geral = geral
-                        res.json(r)
-                    }
-                })
-            })
+            var d = 0
+            if (p.tipo == 'vip') {
+                d = Math.round(p.subtotal * 0.1)
+            }
+            if (p.tipo == 'comum' && p.subtotal >= 500) {
+                d = Math.round(p.subtotal * 0.05)
+            }
+            if (p.tipo == 'atacado' && qtd >= 10) {
+                d = Math.round(p.subtotal * 0.15)
+            }
+            if (!r2[p.tipo]) {
+                r2[p.tipo] = {pedidos: 0, itens: 0, faturamento: 0}
+            }
+            r2[p.tipo].pedidos++
+            r2[p.tipo].itens += qtd
+            r2[p.tipo].faturamento += p.subtotal - d + p.frete
         })
+        var geral = {pedidos: 0, itens: 0, faturamento: 0}
+        for (var t in r2) {
+            r2[t].faturamento = Number(r2[t].faturamento.toFixed(2))
+            geral.pedidos += r2[t].pedidos
+            geral.itens += r2[t].itens
+            geral.faturamento += r2[t].faturamento
+        }
+        geral.faturamento = Number(geral.faturamento.toFixed(2))
+        r2.geral = geral
+        res.json(r2)
     })
 
     // TODO: mover o resto pra routes/ depois
@@ -237,44 +234,36 @@ function createLegadoRouter(db, v) {
      * `POST /pedidos/:id/cancelar`: cancela um pedido e devolve o estoque.
      *
      * So pedidos com status `criado` podem ser cancelados (`criado` -> `cancelado`).
-     * Muda o status e soma de volta ao estoque a quantidade de cada item.
-     * Sem transacao: os updates de estoque rodam em loop apos o update do status.
+     * Muda o status e soma de volta ao estoque a quantidade de cada item, numa
+     * transacao (`r.pedidos.cancelar`): se qualquer parte falhar, o pedido
+     * continua `criado`, o estoque nao muda e a resposta e 500.
      *
      * - 200: `{ id, status: 'cancelado' }`
      * - 400: `{ erro: 'Pedido nao pode ser cancelado (status <status>)' }`
      * - 404: `{ erro: 'Pedido nao encontrado' }`
      * - 500: `{ erro: 'Erro ao cancelar pedido' }`
      */
-    router.post('/pedidos/:id/cancelar', v.idPedido, function(req, res) {
-        db.get('SELECT * FROM pedidos WHERE id = ?', [req.params.id], function(err, p) {
-            if (err) {
-                console.log(err)
-                return res.status(500).json({erro: 'Erro ao cancelar pedido'})
-            }
-            if (!p) {
-                return res.status(404).json({erro: 'Pedido nao encontrado'})
-            }
-            if (p.status != 'criado') {
-                return res.status(400).json({erro: 'Pedido nao pode ser cancelado (status ' + p.status + ')'})
-            }
-            db.run("UPDATE pedidos SET status = 'cancelado' WHERE id = ?", [p.id], function(err) {
-                if (err) {
-                    console.log(err)
-                    return res.status(500).json({erro: 'Erro ao cancelar pedido'})
-                }
-                db.all('SELECT * FROM itens_pedido WHERE pedido_id = ?', [p.id], function(err, itens) {
-                    var n = 0
-                    itens.forEach(function(it) {
-                        db.run('UPDATE produtos SET estoque = estoque + ? WHERE id = ?', [it.quantidade, it.produto_id], function() {
-                            n++
-                            if (n == itens.length) {
-                                res.json({id: p.id, status: 'cancelado'})
-                            }
-                        })
-                    })
-                })
-            })
-        })
+    router.post('/pedidos/:id/cancelar', v.idPedido, async function(req, res) {
+        var p
+        try {
+            p = await r.pedidos.buscar(req.params.id)
+        } catch (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro ao cancelar pedido'})
+        }
+        if (!p) {
+            return res.status(404).json({erro: 'Pedido nao encontrado'})
+        }
+        if (p.status != 'criado') {
+            return res.status(400).json({erro: 'Pedido nao pode ser cancelado (status ' + p.status + ')'})
+        }
+        try {
+            await r.pedidos.cancelar(p.id)
+        } catch (err) {
+            console.log(err)
+            return res.status(500).json({erro: 'Erro ao cancelar pedido'})
+        }
+        res.json({id: p.id, status: 'cancelado'})
     })
 
     // DELETE /pedidos/:id desativado de proposito: pedidos sao cancelados

@@ -9,9 +9,13 @@ const express = require('express')
 const { validaCep } = require('../utils')
 
 /**
- * Cria o router de clientes sobre a conexao informada.
+ * Cria o router de clientes sobre os repositories informados.
  *
- * @param {import('sqlite3').Database} db Conexao aberta (`abrirBanco`).
+ * Os handlers sao `async`; toda chamada a repository fica num `try` que
+ * responde a mensagem 500 da rota (sem ele, o Express 5 responderia 500 em
+ * HTML).
+ *
+ * @param {import('../repositories').Repositorios} r Repositories (src/repositories/).
  * @param {Object} v Validadores de entrada (middlewares montados em src/app.ts
  *   a partir de src/http/schemas/).
  * @param {import('express').RequestHandler} v.idCliente `:id` de cliente (404 `Cliente nao encontrado`).
@@ -19,7 +23,7 @@ const { validaCep } = require('../utils')
  *   (src/http/schemas/cliente.ts; 400 `{ error }` com a mensagem do primeiro problema).
  * @returns {import('express').Router} Router com `GET /`, `GET /:id` e `POST /`.
  */
-const createClientesRouter = (db, v) => {
+const createClientesRouter = (r, v) => {
   const router = express.Router()
 
   /**
@@ -31,14 +35,15 @@ const createClientesRouter = (db, v) => {
    * @param {import('express').Request} req
    * @param {import('express').Response} res
    */
-  function listarClientes(req, res) {
-    db.all('SELECT id, nome, email, cep, tipo FROM clientes ORDER BY id', [], (err, rows) => {
-      if (err) {
-        console.error(err)
-        return res.status(500).json({ error: 'Erro ao listar clientes' })
-      }
-      res.json(rows)
-    })
+  async function listarClientes(req, res) {
+    let rows
+    try {
+      rows = await r.clientes.listar()
+    } catch (err) {
+      console.error(err)
+      return res.status(500).json({ error: 'Erro ao listar clientes' })
+    }
+    res.json(rows)
   }
 
   /**
@@ -51,17 +56,18 @@ const createClientesRouter = (db, v) => {
    * @param {import('express').Request} req `req.params.id`: id do cliente.
    * @param {import('express').Response} res
    */
-  function buscarCliente(req, res) {
-    db.get('SELECT id, nome, email, cep, tipo FROM clientes WHERE id = ?', [req.params.id], (err, row) => {
-      if (err) {
-        console.error(err)
-        return res.status(500).json({ error: 'Erro ao buscar cliente' })
-      }
-      if (!row) {
-        return res.status(404).json({ error: 'Cliente nao encontrado' })
-      }
-      res.json(row)
-    })
+  async function buscarCliente(req, res) {
+    let row
+    try {
+      row = await r.clientes.buscar(req.params.id)
+    } catch (err) {
+      console.error(err)
+      return res.status(500).json({ error: 'Erro ao buscar cliente' })
+    }
+    if (!row) {
+      return res.status(404).json({ error: 'Cliente nao encontrado' })
+    }
+    res.json(row)
   }
 
   /**
@@ -81,17 +87,17 @@ const createClientesRouter = (db, v) => {
    * @param {import('express').Request} req
    * @param {import('express').Response} res
    */
-  function criarCliente(req, res) {
+  async function criarCliente(req, res) {
     const { nome, email } = req.body
     const cep = validaCep(req.body.cep)
-    const sql = 'INSERT INTO clientes (nome, email, cep, tipo) VALUES (?, ?, ?, ?)'
-    db.run(sql, [nome, email, cep, 'comum'], function (err) {
-      if (err) {
-        console.error(err)
-        return res.status(500).json({ error: 'Erro ao salvar cliente' })
-      }
-      res.status(201).json({ id: this.lastID, nome, email, cep, tipo: 'comum' })
-    })
+    let id
+    try {
+      id = await r.clientes.criar({ nome, email, cep })
+    } catch (err) {
+      console.error(err)
+      return res.status(500).json({ error: 'Erro ao salvar cliente' })
+    }
+    res.status(201).json({ id, nome, email, cep, tipo: 'comum' })
   }
 
   router.get('/', listarClientes)

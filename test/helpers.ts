@@ -52,11 +52,7 @@ export const api = () => supertest(app)
  */
 export const appComBanco = async (preparar: string) => {
   const db = abrirTemporario()
-  if (preparar) {
-    await new Promise<void>((resolve, reject) => {
-      db.exec(preparar, (err: Error | null) => (err ? reject(err) : resolve()))
-    })
-  }
+  if (preparar) db.exec(preparar)
   const appQuebrado = createApp({ db })
   return () => supertest(appQuebrado)
 }
@@ -64,9 +60,7 @@ export const appComBanco = async (preparar: string) => {
 /** Fecha e apaga todos os bancos temporarios deste arquivo de teste. */
 export const fecharBancos = async () => {
   for (const { db, arquivo } of bancos.splice(0)) {
-    await new Promise<void>((resolve, reject) => {
-      db.close((err: Error | null) => (err ? reject(err) : resolve()))
-    })
+    db.close()
     fs.rmSync(arquivo, { force: true })
   }
 }
