@@ -55,4 +55,39 @@ describe('GET /frete', () => {
       expect(res.body).toEqual({ erro: 'CEP invalido' })
     }
   })
+
+  // Comportamento atual: `parseFloat(subtotal) || 0` aceita negativo, expoente,
+  // decimal sem parte inteira e corta no primeiro caractere nao numerico.
+  it('[atual] subtotal negativo e aceito e cobra frete', async () => {
+    const res = await api().get('/frete').query({ cep: '01310100', subtotal: '-10' })
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ cep: '01310100', subtotal: -10, frete: 15 })
+  })
+
+  it('[atual] subtotal com expoente, sem parte inteira ou com virgula usa o parseFloat', async () => {
+    for (const [subtotal, valor] of [['1e3', 1000], ['.5', 0.5], ['100,50', 100]] as const) {
+      const res = await api().get('/frete').query({ cep: '01310100', subtotal })
+      expect(res.status, subtotal).toBe(200)
+      expect(res.body.subtotal, subtotal).toBe(valor)
+    }
+  })
+
+  it('subtotal vazio vale 0', async () => {
+    const res = await api().get('/frete?cep=01310100&subtotal=')
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ cep: '01310100', subtotal: 0, frete: 15 })
+  })
+
+  // Comportamento atual: utils.validaCep remove o primeiro hifen em qualquer posicao.
+  it('[atual] CEP com hifen fora do lugar e aceito', async () => {
+    const res = await api().get('/frete').query({ cep: '0131-0100' })
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ cep: '01310100', subtotal: 0, frete: 15 })
+  })
+
+  it('CEP e avaliado antes do subtotal', async () => {
+    const res = await api().get('/frete').query({ cep: '123', subtotal: 'abc' })
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual({ erro: 'CEP invalido' })
+  })
 })

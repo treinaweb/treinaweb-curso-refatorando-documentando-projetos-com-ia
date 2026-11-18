@@ -117,6 +117,14 @@ describe('GET /pedidos/:id/resumo', () => {
   })
 
   // Comportamento atual: o id e concatenado no SQL do resumo (app.js).
+  // Comportamento atual: o id concatenado `<id>.0` e um numero valido no SQL.
+  it('[atual] id decimal monta o resumo do pedido', async () => {
+    const pedido = await criarPedido(CLIENTE.comumCep0, [{ produto_id: 3, quantidade: 1 }])
+    const res = await api().get(`/pedidos/${pedido.id}.0/resumo`)
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ pedido: pedido.id })
+  })
+
   it('[atual] id nao numerico devolve 500 (SQL concatenado)', async () => {
     const res = await api().get('/pedidos/abc/resumo')
     expect(res.status).toBe(500)

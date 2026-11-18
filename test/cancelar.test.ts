@@ -61,6 +61,14 @@ describe('POST /pedidos/:id/cancelar', () => {
     expect(res.body).toEqual({ erro: 'Pedido nao encontrado' })
   })
 
+  // Comportamento atual: a afinidade INTEGER converte '<id>.0' no id.
+  it('[atual] id decimal cancela o pedido', async () => {
+    const pedido = await criarPedido(CLIENTE.comumCep0, [{ produto_id: 3, quantidade: 1 }])
+    const res = await api().post(`/pedidos/${pedido.id}.0/cancelar`)
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ id: pedido.id, status: 'cancelado' })
+  })
+
   it.todo(
     'pedido sem itens nunca responde (o loop de devolucao nao chama res.json); inalcancavel pela API, que exige itens',
   )

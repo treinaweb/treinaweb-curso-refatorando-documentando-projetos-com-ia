@@ -24,6 +24,13 @@ describe('GET /clientes/:id', () => {
     expect(res.status).toBe(404)
     expect(res.body).toEqual({ error: 'Cliente nao encontrado' })
   })
+
+  // Comportamento atual: a afinidade INTEGER converte '1.0' em 1.
+  it('[atual] id decimal encontra o cliente 1', async () => {
+    const res = await api().get('/clientes/1.0')
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual(SEED_CLIENTES[0])
+  })
 })
 
 describe('POST /clientes', () => {
@@ -118,6 +125,28 @@ describe('POST /clientes', () => {
     await api().post('/clientes').send({ nome: 'X', email: 'x@x', cep: '123' })
     const depois = await api().get('/clientes')
     expect(depois.body).toEqual(antes.body)
+  })
+
+  // Comportamento atual: so se confere `!nome || !email`, entao valores que nao
+  // sao texto sao gravados como vieram.
+  it('[atual] nome numerico e gravado como numero', async () => {
+    const res = await api().post('/clientes').send({ nome: 123, email: 'n@x', cep: '01310100' })
+    expect(res.status).toBe(201)
+    expect(res.body).toEqual({ id: expect.any(Number), nome: 123, email: 'n@x', cep: '01310100', tipo: 'comum' })
+  })
+
+  it('[atual] email booleano e gravado como o texto "1"', async () => {
+    const res = await api().post('/clientes').send({ nome: 'B', email: true, cep: '01310100' })
+    expect(res.status).toBe(201)
+    expect(res.body).toEqual({ id: expect.any(Number), nome: 'B', email: true, cep: '01310100', tipo: 'comum' })
+    const detalhe = await api().get(`/clientes/${res.body.id}`)
+    expect(detalhe.body.email).toBe('1')
+  })
+
+  it('sem nome e com email invalido devolve 400 de obrigatorios', async () => {
+    const res = await api().post('/clientes').send({ email: true, cep: '01310100' })
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual({ error: 'Nome e email sao obrigatorios' })
   })
 })
 

@@ -115,6 +115,50 @@ describe('POST /pedidos: validacoes', () => {
     expect(res.status).toBe(500)
     expect(res.body).toEqual({ erro: 'Erro interno' })
   })
+
+  // Comportamento atual: so se confere `!cliente_id`, entao valores falsy caem
+  // em "obrigatorio" e os demais seguem para a consulta do cliente.
+  it('[atual] cliente_id 0, "" ou false devolve 400 cliente_id obrigatorio', async () => {
+    for (const cliente_id of [0, '', false]) {
+      const res = await postPedido(cliente_id, [{ produto_id: 3, quantidade: 1 }])
+      expect(res.status, JSON.stringify(cliente_id)).toBe(400)
+      expect(res.body).toEqual({ erro: 'cliente_id obrigatorio' })
+    }
+  })
+
+  it('[atual] cliente_id 1.5 ou -3 devolve 404 Cliente nao encontrado', async () => {
+    for (const cliente_id of [1.5, -3]) {
+      const res = await postPedido(cliente_id, [{ produto_id: 3, quantidade: 1 }])
+      expect(res.status, JSON.stringify(cliente_id)).toBe(404)
+      expect(res.body).toEqual({ erro: 'Cliente nao encontrado' })
+    }
+  })
+
+  it('[atual] cliente_id e produto_id em texto ("1") criam o pedido', async () => {
+    const res = await postPedido('1', [{ produto_id: '3', quantidade: 1 }])
+    expect(res.status).toBe(201)
+    expect(res.body).toEqual(criado(1, 29.9, 0, 15, 44.9))
+  })
+
+  it('[atual] produto_id 0 devolve 400 produto_id obrigatorio', async () => {
+    const res = await postPedido(1, [{ produto_id: 0, quantidade: 1 }])
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual({ erro: 'produto_id obrigatorio no item 1' })
+  })
+
+  it('item que nao e objeto (numero) devolve 400 produto_id obrigatorio', async () => {
+    const res = await postPedido(1, [5 as never])
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual({ erro: 'produto_id obrigatorio no item 1' })
+  })
+
+  // Comportamento atual: `itens[i].produto_id` com item null lanca TypeError,
+  // e o Express responde com a pagina de erro padrao (HTML).
+  it('[atual] item null devolve 500 com a pagina de erro do Express', async () => {
+    const res = await postPedido(1, [null as never])
+    expect(res.status).toBe(500)
+    expect(res.headers['content-type']).toMatch(/^text\/html/)
+  })
 })
 
 describe('POST /pedidos: regras de preco', () => {
@@ -268,6 +312,14 @@ describe('POST /pedidos: efeitos e GET /pedidos/:id', () => {
     const res = await api().get('/pedidos/abc')
     expect(res.status).toBe(404)
     expect(res.body).toEqual({ erro: 'Pedido nao encontrado' })
+  })
+
+  // Comportamento atual: a afinidade INTEGER converte '<id>.0' no id.
+  it('[atual] GET /pedidos/:id decimal encontra o pedido', async () => {
+    const pedido = await criarPedido(CLIENTE.comumCep0, [{ produto_id: 3, quantidade: 1 }])
+    const res = await api().get(`/pedidos/${pedido.id}.0`)
+    expect(res.status).toBe(200)
+    expect(res.body).toMatchObject({ id: pedido.id, status: 'criado' })
   })
 
   it('nao existe listagem GET /pedidos', async () => {
