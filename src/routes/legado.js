@@ -16,9 +16,9 @@
  */
 
 var express = require('express')
-var db = require('./db')
-var descontos = require('./descontos')
-var utils = require('./utils')
+var db = require('../db')
+var descontos = require('../descontos')
+var utils = require('../utils')
 
 var app = express()
 app.use(express.json())
@@ -90,8 +90,8 @@ app.get('/frete', function(req, res) {
     res.json({cep: cep, subtotal: subtotal, frete: utils.calcula_frete(cep, subtotal)})
 })
 
-app.use('/clientes', require('./routes/clientes'))
-app.use('/pedidos', require('./routes/pedidos'))
+app.use('/clientes', require('./clientes'))
+app.use('/pedidos', require('./pedidos'))
 
 /**
  * `GET /pedidos/:id/resumo`: resumo legivel do pedido.

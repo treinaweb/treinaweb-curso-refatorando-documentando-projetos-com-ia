@@ -24,7 +24,7 @@ vi.spyOn(console, 'error').mockImplementation(() => {})
 afterAll(async () => {
   // createRequire usa o mesmo cache de `require` nativo que app.js usa,
   // entao esta e a mesma conexao do app (nao uma segunda instancia).
-  const db = createRequire(import.meta.url)('../db.js')
+  const db = createRequire(import.meta.url)('../src/db/index.js')
   await new Promise<void>((resolve, reject) => {
     db.close((err: Error | null) => (err ? reject(err) : resolve()))
   })

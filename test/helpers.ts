@@ -6,7 +6,7 @@
  */
 import supertest from 'supertest'
 import { expect } from 'vitest'
-import app from '../app'
+import app from '../src/routes/legado'
 
 /** Cliente HTTP sobre o app (porta efemera aberta e fechada pelo supertest). */
 export const api = () => supertest(app)
