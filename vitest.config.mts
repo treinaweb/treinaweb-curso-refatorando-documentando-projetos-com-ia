@@ -9,7 +9,9 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text'],
-      include: ['*.js', 'routes/**/*.js'],
+      include: ['src/**/*.{js,ts}'],
+      // Entrypoint (listen): os testes montam o app com createApp, sem porta.
+      exclude: ['src/server.ts'],
     },
   },
 })

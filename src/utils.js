@@ -3,8 +3,6 @@
  * calculo de frete e formatacao de moeda.
  */
 
-var db = require('./db')
-
 /**
  * @callback BuscarClienteCallback
  * @param {Error|null} err Erro do SQLite, ou `null`.
@@ -18,11 +16,12 @@ var db = require('./db')
  * Atencao: o `id` e concatenado direto no SQL (codigo legado, nao copie o
  * padrao). Quem chama deve garantir que e um valor numerico.
  *
+ * @param {import('sqlite3').Database} db Conexao aberta (`abrirBanco`).
  * @param {number|string} id Id do cliente.
  * @param {BuscarClienteCallback} cb Chamado com `(err, cliente)`.
  * @returns {void}
  */
-function buscar_cliente(id, cb) {
+function buscar_cliente(db, id, cb) {
     db.get('SELECT * FROM clientes WHERE id = ' + id, function(err, row) {
         if (err) {
             return cb(err)

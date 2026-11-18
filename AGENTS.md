@@ -1,40 +1,47 @@
 # Loja API — contexto para agentes
 
 API REST interna de pedidos de uma loja de informática/periféricos.
-Node 22 + Express 4 + SQLite3 (callbacks, sem ORM). Uso interno, **sem autenticação**.
+Node 22 + Express 4 + SQLite3 (callbacks, sem ORM), em transição de JS para TypeScript. Uso interno, **sem autenticação**.
 
 ## Rodar e verificar
 
-- `npm install` e `npm start` (ou `node app.js`). Variáveis: `PORTA` (padrão 3000), `DB_PATH` (padrão `./loja.db`).
-- Se o arquivo do banco não existe, `db.js` cria o schema e insere dados de exemplo (produtos e clientes).
+- `npm install` e `npm start`. O `start` compila antes (`prestart` → `npm run build`, `tsc` para `dist/`) e roda
+  `node dist/server.js`; por isso exige as devDependencies instaladas. `dist/` não é versionado.
+  Variáveis: `PORTA` (padrão 3000), `DB_PATH` (padrão `./loja.db`).
+- Se o arquivo do banco não existe, `abrirBanco` (`src/db`) cria o schema e insere dados de exemplo (produtos e clientes).
   Apagar `loja.db` zera os dados: **pergunte antes de apagar**.
-- **Testes:** `npm test` (Vitest + supertest), `npm run typecheck` (`tsc --noEmit`, o Vitest não checa tipos) e
+- **Testes:** `npm test` (Vitest + supertest), `npm run typecheck` (`tsc --noEmit` do editor e do build; o Vitest não checa tipos) e
   `npm run test:coverage`. Exigem Node >= 22.12 (o `.nvmrc` atende). Rode `npm test` antes e depois de qualquer mudança.
   - São **testes de caracterização**: registram o comportamento HTTP atual (status, corpo inteiro, efeitos no estoque
-    e nos valores gravados). Testam só pelo HTTP, sobre o `app` exportado por `app.js`; não importe `utils`, `descontos`
-    nem `db` nos testes. Cada arquivo roda num processo com banco temporário próprio (`test/setup.ts`); o `loja.db` não é tocado.
+    e nos valores gravados). Testam só pelo HTTP. Os `*.test.ts` importam só de `./helpers`; não importe `utils`, `descontos`
+    nem `db` neles. Só `test/helpers.ts` e `test/setup.ts` montam o app (`createApp` + `abrirBanco`): cada arquivo roda
+    num processo com banco temporário próprio; o `loja.db` não é tocado.
   - Testes com nome iniciado por `[atual]` registram bugs ou divergências conhecidos, como são hoje. Corrigir um deles
     é mudança de comportamento: faça numa change própria, alterando o teste junto. Liste-os com `grep -rn "\[atual\]" test`.
   - Lacunas que o HTTP não alcança ficam como `it.todo`.
-- Para verificar à mão sem sujar o banco local, use um banco descartável: `DB_PATH=/tmp/loja-teste.db PORTA=3999 node app.js`.
+- Para verificar à mão sem sujar o banco local, use um banco descartável: `DB_PATH=/tmp/loja-teste.db PORTA=3999 npm start`.
 - O README é a referência da API para quem a consome (rotas, payloads, respostas, erros, exemplos).
-  Em caso de dúvida, a fonte da verdade das rotas continua sendo `app.js` + `routes/`.
+  Em caso de dúvida, a fonte da verdade das rotas continua sendo `src/app.ts` + `src/routes/`.
 
 ## Mapa
 
-- `app.js`: bootstrap, rotas de produtos, `/frete`, `/pedidos/:id/resumo`, `/relatorios/vendas`, `/pedidos/:id/cancelar`.
-- `routes/clientes.js`, `routes/pedidos.js`: rotas já migradas (migração para `routes/` incompleta).
-- `descontos.js`: desconto por tipo de cliente (`desconto_<tipo>`, despacho dinâmico).
-- `utils.js`: validação de CEP, `calcula_frete`, `buscar_cliente`.
-- `db.js`: conexão, schema e seed.
+- `src/server.ts`: entrypoint (lê `PORTA`/`DB_PATH`, abre o banco, `listen`).
+- `src/app.ts`: `createApp({ db })`, middlewares (`express.json()`, log) e montagem dos routers. O `db` é sempre
+  injetado: nenhum módulo abre conexão sozinho; os routers são factories `createXRouter(db)`.
+- `src/routes/legado.js`: rotas de produtos, `/frete`, `/pedidos/:id/resumo`, `/relatorios/vendas`, `/pedidos/:id/cancelar`.
+- `src/routes/clientes.js`, `src/routes/pedidos.js`: rotas já migradas para router por recurso.
+- `src/descontos.js`: desconto por tipo de cliente (`desconto_<tipo>`, despacho dinâmico).
+- `src/utils.js`: validação de CEP, `calcula_frete`, `buscar_cliente(db, id, cb)`.
+- `src/db/index.js`: `abrirBanco(arquivo)`: conexão, schema e seed.
 - `docs/openapi.yaml`: contrato OpenAPI 3.0.3 das rotas (escrito à mão, estático; não é servido pela API).
 - `docs/refatoracao.md`: roteiro da refatoração (etapas, ordem, decisões tomadas e em aberto, registro de andamento).
 - `test/`: testes de caracterização em TypeScript (`*.test.ts`, um arquivo por área), `setup.ts` e `helpers.ts`.
-  Configuração em `vitest.config.mts` e `tsconfig.json` (só testes/editor; o código de produção é JS, sem build).
+  Configuração em `vitest.config.mts`, `tsconfig.json` (editor e typecheck de `src/` + `test/`) e `tsconfig.build.json`
+  (build de `src/` para `dist/`, `allowJs`: o código legado é JS e os módulos novos nascem em `.ts`).
 
 ## Regras de negócio
 
-A fonte canônica é a criação de pedido (`POST /pedidos`, em `routes/pedidos.js`): é ela que grava
+A fonte canônica é a criação de pedido (`POST /pedidos`, em `src/routes/pedidos.js`): é ela que grava
 o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o negócio; **pergunte antes de alterá-los**.
 
 - **Preço:** `total = subtotal - desconto + frete`. O preço do produto é copiado para
@@ -56,23 +63,23 @@ o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o n
 ## Armadilhas
 
 - **Regras de preço duplicadas.** O desconto é recalculado em `POST /pedidos`, `GET /pedidos/:id/resumo`
-  e `GET /relatorios/vendas` (em vez de ler `pedidos.desconto`); o frete existe em `routes/pedidos.js`
+  e `GET /relatorios/vendas` (em vez de ler `pedidos.desconto`); o frete existe em `src/routes/pedidos.js`
   e em `utils.calcula_frete`. As cópias já divergiram. Ao mudar uma regra, alinhe todas ou pergunte.
 - **SQL concatenado** em código legado (busca de produtos, resumo, `buscar_cliente`, `POST /pedidos`).
   Não copie esse padrão.
 - **Sem transação** na criação/cancelamento de pedido; operações em loop com contador de callbacks.
-- Formato de erro inconsistente: `{erro}` no código legado, `{error}` em `routes/clientes.js`.
+- Formato de erro inconsistente: `{erro}` no código legado, `{error}` em `src/routes/clientes.js`.
 
 ## Convenções
 
 - Domínio e mensagens em português (sem acentos nas mensagens de erro).
-- Código novo: estilo de `routes/clientes.js` (`const`, arrow functions, `express.Router`) e
+- Código novo: em TypeScript, no estilo de `src/routes/clientes.js` (`const`, arrow functions, `express.Router`) e
   **SQL sempre parametrizado com `?`**.
-- Rotas novas vão em `routes/`, não em `app.js`.
+- Rotas novas vão em `src/routes/`, como factory que recebe o `db`; não abra conexão fora de `src/server.ts` e dos testes.
 - **JSDoc em português** (`/** ... */`, sem acentos, como os demais comentários) em toda função e rota nova:
   entradas, resposta de sucesso e erros com status. Divergências entre cópias de regras são marcadas com
   `@todo Diverge de <fonte canônica>: ...` (e `(a confirmar)` quando dependem do negócio);
-  liste-as com `grep -rn "Diverge de" --include='*.js' --exclude-dir=node_modules .`.
+  liste-as com `grep -rn "Diverge de" --include='*.js' --include='*.ts' --exclude-dir=node_modules --exclude-dir=dist .`.
 - Mudanças de comportamento passam pelo OpenSpec: `/opsx:explore` → `/opsx:propose` → `/opsx:apply`.
   Specs (quando existirem) ficam em `openspec/specs/`.
 - **Refatoração:** as changes de refatoração seguem `docs/refatoracao.md`. Cada uma cita a etapa, respeita o escopo

@@ -13,7 +13,10 @@ npm install
 npm start
 ```
 
-A API sobe em http://localhost:3000.
+O `npm start` compila o código (`npm run build`, TypeScript para `dist/`) e sobe a API com
+`node dist/server.js`, em http://localhost:3000. Por compilar antes, ele precisa das dependências de
+desenvolvimento instaladas (o `npm install` padrão já instala). Para compilar uma vez e subir sem
+recompilar: `npm run build` e depois `node dist/server.js`.
 
 | Variável  | Padrão      | Uso                        |
 |-----------|-------------|----------------------------|
@@ -35,7 +38,7 @@ Requer Node 22.12 ou mais recente.
 
 ```
 npm test               # testes (Vitest + supertest), cada arquivo com banco temporário próprio
-npm run typecheck      # checagem de tipos dos testes (tsc --noEmit)
+npm run typecheck      # checagem de tipos do código e dos testes (tsc --noEmit)
 npm run test:coverage  # testes com relatório de cobertura
 ```
 

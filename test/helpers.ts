@@ -1,17 +1,32 @@
 /**
  * Helpers compartilhados pelos testes de caracterizacao.
  *
- * Os testes so falam com a API por HTTP (supertest sobre o `app` exportado);
- * nao importam modulos internos (utils, descontos, db).
+ * Os testes so falam com a API por HTTP (supertest sobre o app) e importam
+ * apenas deste arquivo; nao importam modulos internos (utils, descontos, db).
+ * Este arquivo e o test/setup.ts sao os unicos que montam o app: cada arquivo
+ * de teste roda num processo proprio, com um banco temporario novo (o
+ * `abrirBanco` cria o schema e o seed nele), fechado e apagado pelo setup.
  */
+import { randomUUID } from 'node:crypto'
+import os from 'node:os'
+import path from 'node:path'
 import supertest from 'supertest'
 import { expect } from 'vitest'
-import app from '../src/routes/legado'
+import { createApp } from '../src/app'
+import { abrirBanco } from '../src/db'
+
+/** Arquivo do banco temporario deste arquivo de teste. */
+export const arquivo = path.join(os.tmpdir(), `loja-test-${process.pid}-${randomUUID()}.db`)
+
+/** Conexao com o banco temporario (fechada no `afterAll` do test/setup.ts). */
+export const db = abrirBanco(arquivo)
+
+const app = createApp({ db })
 
 /** Cliente HTTP sobre o app (porta efemera aberta e fechada pelo supertest). */
 export const api = () => supertest(app)
 
-/** Produtos do seed (db.js), na ordem de insercao: `id` = posicao + 1. */
+/** Produtos do seed (src/db), na ordem de insercao: `id` = posicao + 1. */
 export const SEED_PRODUTOS = [
   { id: 1, nome: 'Mouse sem fio', preco: 50, estoque: 40 },
   { id: 2, nome: 'Teclado mecânico', preco: 250, estoque: 15 },
@@ -32,7 +47,7 @@ export const SEED_PRODUTOS = [
   { id: 17, nome: 'Carregador USB-C 65W', preco: 149.9, estoque: 22 },
 ]
 
-/** Clientes do seed (db.js), na ordem de insercao: `id` = posicao + 1. */
+/** Clientes do seed (src/db), na ordem de insercao: `id` = posicao + 1. */
 export const SEED_CLIENTES = [
   { id: 1, nome: 'Maria Silva', email: 'maria.silva@example.com', cep: '01310100', tipo: 'comum' },
   { id: 2, nome: 'João Pereira', email: 'joao.pereira@example.com', cep: '20040020', tipo: 'vip' },

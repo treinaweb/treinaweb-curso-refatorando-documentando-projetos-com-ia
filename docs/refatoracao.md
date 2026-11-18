@@ -26,8 +26,9 @@ Melhorar a legibilidade e a manutenção do código sem mudar o comportamento da
    `npm run typecheck` passando.
 2. **Só a etapa 3 altera testes de caracterização.** Ela concentra todas as mudanças de comportamento
    da refatoração. Da etapa 2 em diante, na ordem de execução, nenhum teste existente muda: se um teste
-   quebrar, a refatoração mudou o comportamento sem querer. A única exceção já prevista é a linha de
-   import dos testes na etapa 1 (`../app` passa a ser o novo caminho do `createApp`).
+   quebrar, a refatoração mudou o comportamento sem querer. Nenhum `*.test.ts` muda fora da etapa 3:
+   eles importam só de `test/helpers.ts`. Só a infraestrutura de teste (`helpers.ts` e `setup.ts`) pode
+   mudar para acompanhar a estrutura, como na etapa 1 (`createApp` + `abrirBanco`).
 3. **Regras de negócio *a confirmar* são preservadas.** Os testes `[atual]` que registram divergências
    de negócio (veja "Fora da refatoração") continuam passando como estão. Mudá-las é decisão do
    negócio e vira change própria.
@@ -106,7 +107,7 @@ recomendação estão listadas.
 - **Riscos:** nenhum pendente.
 - **Pronto quando:** feito. São 88 testes e 8 `it.todo`, com 88% de cobertura de linhas.
 
-## Etapa 1: Fundação
+## Etapa 1: Fundação (concluída)
 
 - **Change sugerida:** `refactor-foundation`
 - **Depende de:** etapa 0.
@@ -118,26 +119,38 @@ recomendação estão listadas.
   - o `tsconfig` passa a cobrir `src/` com `allowJs`, e os módulos novos já nascem em `.ts`;
   - a pipeline para rodar e empacotar (veja as decisões em aberto) e os scripts `start`, `test`,
     `typecheck` ajustados;
-  - o `test/setup.ts` e o `test/helpers.ts` passam a usar `createApp` com um banco temporário. A linha
-    de import dos testes é a única mudança neles.
+  - o `test/setup.ts` e o `test/helpers.ts` passam a usar `createApp` com um banco temporário. Nenhum
+    `*.test.ts` muda.
 - **Fora de escopo:** reescrever a lógica, trocar callbacks por `async/await`, atualizar dependências
   de produção.
-- **Decisões tomadas:** `createApp` com injeção de dependência; TS com `allowJs` durante a transição.
-- **Decisões em aberto:**
-  - **Como rodar o TS:** (a) compilar com `tsc` para `dist/` e rodar `node dist/server.js`; ou
-    (b) executar TS direto no Node, com remoção de tipos nativa e sem build. Recomendação: (a), por
-    ser previsível e não restringir a sintaxe TS. A (b) exige `erasableSyntaxOnly`, ou seja, sem
-    `enum` e sem *parameter properties*.
-  - **Subir para o Node 24 LTS?** O `.nvmrc` hoje é 22, e o Node 22 entra em manutenção. A
-    recomendação é subir nesta etapa, se a pipeline escolhida se beneficiar disso (por exemplo,
-    remoção de tipos sem flag). O `engines` e o `.nvmrc` mudam juntos.
+- **Decisões tomadas:**
+  - `createApp` com injeção de dependência; TS com `allowJs` durante a transição.
+  - **Injeção por factories:** os routers são `createXRouter(db)`, `buscar_cliente` recebe o `db` e
+    `db.js` virou `abrirBanco(arquivo)` (seed só em banco novo). As rotas que estavam no `app.js` ficam
+    juntas em `src/routes/legado.js` até a etapa 6.
+  - **Como rodar o TS:** compilar com `tsc` para `dist/` (`tsconfig.build.json`, `module: nodenext`) e
+    rodar `node dist/server.js`; o `npm start` compila antes (`prestart`). A remoção de tipos nativa
+    foi descartada por ora: exigiria Node >= 22.18 e imports com `.ts`.
+  - **Node 24:** adiado. A pipeline escolhida não depende dele; a decisão volta na etapa 2.
+    `.nvmrc` e `engines` não mudaram.
+  - **Histórico:** os movimentos foram para um commit próprio, antes das factories. Envolver o corpo
+    dos módulos numa função reindenta tudo, e o Git deixa de detectar o rename num commit só (mesmo
+    com `-w`).
+- **Decisões em aberto:** nenhuma.
+- **Observações:**
+  - O `tsc` reescreve o JS legado em `dist/` com `"use strict"`, então o código que roda em produção não
+    é o que os testes exercitam. A suíte foi rodada uma vez contra o `dist/` (88 passando) e o smoke
+    passa a ser critério das etapas 3 a 6, até a etapa 7 eliminar o JS.
+  - A cobertura de linhas passou de 88% para 86% sem nenhum teste a menos: o JS legado agora é carregado
+    com `require` nativo a partir do `app.ts`, e o v8 mede de forma mais grosseira que no arquivo
+    importado pelo Vite. O `src/server.ts` (só `listen`) fica fora da cobertura.
 - **Riscos:**
   - Mover arquivos quebra imports → `git mv` e `npm test` depois de cada movimento.
   - O seed do `db.js` depende de o arquivo não existir → manter a mesma semântica no `createApp`
     (seed só em banco novo).
 - **Pronto quando:** `npm start` sobe a API pelo entrypoint novo com o mesmo log; `npm test` (88 e 8
-  todo) e `npm run typecheck` passam; nenhuma lógica de rota mudou (`git diff -M` mostra só
-  movimentos e a ligação do `createApp`).
+  todo) e `npm run typecheck` passam; nenhuma lógica de rota mudou (o commit dos movimentos mostra
+  só renames; o seguinte, com `git diff -w`, só a ligação das factories e do `createApp`).
 
 ## Etapa 3: Validação com Zod e correções explícitas
 
@@ -203,6 +216,8 @@ recomendação estão listadas.
 - **Pronto quando:** cada mudança de comportamento tem o teste antigo atualizado e citado na change;
   `grep -rn "\[atual\]" test` lista só as divergências de negócio; README, OpenAPI e `AGENTS.md` estão
   atualizados; `npm test` e `npm run typecheck` passam.
+  Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como os
+  testes atualizados descrevem.
 
 ## Etapa 2: Express 5
 
@@ -210,8 +225,8 @@ recomendação estão listadas.
 - **Depende de:** etapa 3.
 - **Objetivo:** ganhar o tratamento nativo de promises rejeitadas nos handlers, pré-requisito para o
   `async/await` das etapas 4 a 6.
-- **Escopo:** `express@5` + `@types/express`; ajustar o que o Express 5 muda, preservando as
-  respostas.
+- **Escopo:** `express@5` + `@types/express@5` (hoje na 4, entrou na etapa 1); ajustar o que o
+  Express 5 muda, preservando as respostas. Rever a decisão do Node 24 (adiada na etapa 1).
 - **Fora de escopo:** reescrever handlers em `async` (etapa 6).
 - **Decisões tomadas:** preservar todas as respostas. Nenhum teste muda.
 - **Decisões em aberto:** manter o *query parser* `extended` (`app.set('query parser', 'extended')`)
@@ -224,6 +239,7 @@ recomendação estão listadas.
     simples; os testes de 404 do `DELETE /pedidos/:id` cobrem o roteamento.
 - **Pronto quando:** `express` 5 instalado, `npm test` sem nenhuma mudança nos testes, `npm audit`
   sem vulnerabilidades novas.
+  Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
 ## Etapa 4: Camada de dados
 
@@ -263,6 +279,7 @@ recomendação estão listadas.
 - **Pronto quando:** nenhum SQL fora de `src/repositories/` e `src/db/`;
   `grep -rn "' +\|+ '" src/repositories` não encontra SQL concatenado; `npm test` sem mudança nos
   testes; `npm audit` sem as vulnerabilidades do `sqlite3` 5.
+  Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
 ## Etapa 5: Domínio de preços
 
@@ -289,6 +306,7 @@ recomendação estão listadas.
   - "Unificar sem querer" a divergência do resumo ou do relatório → há testes `[atual]` para as duas.
 - **Pronto quando:** `grep -rn "0.05\|0.1\b\|0.15\|>= 300" src` só encontra o módulo de preços;
   `npm test` sem mudança nos testes.
+  Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
 ## Etapa 6: Camada HTTP e services
 
@@ -318,6 +336,7 @@ recomendação estão listadas.
     formato da rota; os testes comparam o corpo inteiro.
 - **Pronto quando:** não existem mais callbacks de banco nem contadores de callback; `app.js` e
   `routes/` legados foram removidos; `npm test` sem mudança nos testes.
+  Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
 ## Etapa 7: TypeScript estrito
 
@@ -391,7 +410,7 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | Etapa | Change | Status |
 |---|---|---|
 | 0. Testes de caracterização | `add-characterization-tests` | concluída (`2026-11-18-add-characterization-tests`) |
-| 1. Fundação | `refactor-foundation` | pendente |
+| 1. Fundação | `refactor-foundation` | concluída (`refactor-foundation`) |
 | 3. Validação com Zod e correções explícitas | `validation-and-explicit-fixes` | pendente |
 | 2. Express 5 | `upgrade-express-5` | pendente |
 | 4. Camada de dados | `data-layer-repositories` | pendente |
