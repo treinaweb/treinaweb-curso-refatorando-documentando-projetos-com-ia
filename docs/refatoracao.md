@@ -240,7 +240,7 @@ recomendação estão listadas.
 
 ## Etapa 2: Express 5 (concluída)
 
-- **Change sugerida:** `upgrade-express-5`
+- **Change sugerida:** `upgrade-express-5` (arquivada em `2026-11-18-upgrade-express-5`)
 - **Depende de:** etapa 3.
 - **Objetivo:** ganhar o tratamento nativo de promises rejeitadas nos handlers, pré-requisito para o
   `async/await` das etapas 4 a 6.
@@ -441,7 +441,7 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | 0. Testes de caracterização | `add-characterization-tests` | concluída (`2026-11-18-add-characterization-tests`) |
 | 1. Fundação | `refactor-foundation` | concluída (`2026-11-18-refactor-foundation`) |
 | 3. Validação com Zod e correções explícitas | `validation-and-explicit-fixes` | concluída (`2026-11-18-validation-and-explicit-fixes`) |
-| 2. Express 5 | `upgrade-express-5` | concluída (`upgrade-express-5`) |
+| 2. Express 5 | `upgrade-express-5` | concluída (`2026-11-18-upgrade-express-5`) |
 | 4. Camada de dados | `data-layer-repositories` | pendente |
 | 5. Domínio de preços | `pricing-domain` | pendente |
 | 6. Camada HTTP e services | `http-layer-services` | pendente |
