@@ -28,6 +28,7 @@ Node 22 + Express 4 + SQLite3 (callbacks, sem ORM). Uso interno, **sem autentica
 - `utils.js`: validação de CEP, `calcula_frete`, `buscar_cliente`.
 - `db.js`: conexão, schema e seed.
 - `docs/openapi.yaml`: contrato OpenAPI 3.0.3 das rotas (escrito à mão, estático; não é servido pela API).
+- `docs/refatoracao.md`: roteiro da refatoração (etapas, ordem, decisões tomadas e em aberto, registro de andamento).
 - `test/`: testes de caracterização em TypeScript (`*.test.ts`, um arquivo por área), `setup.ts` e `helpers.ts`.
   Configuração em `vitest.config.mts` e `tsconfig.json` (só testes/editor; o código de produção é JS, sem build).
 
@@ -74,5 +75,8 @@ o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o n
   liste-as com `grep -rn "Diverge de" --include='*.js' --exclude-dir=node_modules .`.
 - Mudanças de comportamento passam pelo OpenSpec: `/opsx:explore` → `/opsx:propose` → `/opsx:apply`.
   Specs (quando existirem) ficam em `openspec/specs/`.
+- **Refatoração:** as changes de refatoração seguem `docs/refatoracao.md`. Cada uma cita a etapa, respeita o escopo
+  e as decisões registradas (só a etapa 3 altera testes de caracterização) e, na mesma change, atualiza o roteiro:
+  o registro de andamento e qualquer decisão que tenha mudado.
 - **Mantenha este arquivo atualizado:** ao mudar regras de negócio, comandos ou convenções, atualize o `AGENTS.md` na mesma mudança.
 - Ao mudar uma regra ou rota, atualize também o `README.md`, o JSDoc afetado e o `docs/openapi.yaml` na mesma mudança.

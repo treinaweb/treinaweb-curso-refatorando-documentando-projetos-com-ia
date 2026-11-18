@@ -1,0 +1,401 @@
+# Roteiro de refatoração
+
+Referência para propor as changes da refatoração da Loja API. Cada etapa abaixo vira uma change
+do OpenSpec (`/opsx:propose <change sugerida>`), que cita a etapa, copia o escopo e as decisões para
+a proposal e o design, e **atualiza este roteiro na mesma change**: o registro de andamento e qualquer
+decisão que tenha mudado.
+
+O roteiro é uma referência, não um contrato fechado: uma etapa pode rever uma decisão, desde que
+registre a mudança aqui.
+
+## Objetivo
+
+Melhorar a legibilidade e a manutenção do código sem mudar o comportamento da API:
+
+- separar responsabilidades em camadas e aplicar padrões de projeto;
+- trocar callbacks e contadores de callback por `async/await`;
+- atualizar dependências (Express 5, driver do SQLite);
+- adotar validação de entrada com Zod;
+- migrar o código para TypeScript estrito.
+
+## Princípios e invariantes
+
+1. **Os testes de caracterização são a rede de segurança.** Os 88 testes de `test/` (change
+   `2026-11-18-add-characterization-tests`) registram o contrato HTTP atual: status, corpo inteiro,
+   efeitos no estoque e valores gravados. Cada etapa começa e termina com `npm test` e
+   `npm run typecheck` passando.
+2. **Só a etapa 3 altera testes de caracterização.** Ela concentra todas as mudanças de comportamento
+   da refatoração. Da etapa 2 em diante, na ordem de execução, nenhum teste existente muda: se um teste
+   quebrar, a refatoração mudou o comportamento sem querer. A única exceção já prevista é a linha de
+   import dos testes na etapa 1 (`../app` passa a ser o novo caminho do `createApp`).
+3. **Regras de negócio *a confirmar* são preservadas.** Os testes `[atual]` que registram divergências
+   de negócio (veja "Fora da refatoração") continuam passando como estão. Mudá-las é decisão do
+   negócio e vira change própria.
+4. **Uma change por etapa**, pequena o bastante para revisar. Uma etapa grande pode ser dividida
+   (por exemplo, a 6 por recurso), desde que cada parte deixe os testes passando.
+5. **Testes só pelo HTTP.** Testes unitários novos (por exemplo, do domínio de preços) são permitidos
+   e bem-vindos, mas não substituem os de caracterização.
+6. **Documentação na mesma change**, como já pede o `AGENTS.md`: README, JSDoc ou TSDoc, OpenAPI e
+   `AGENTS.md`, sempre que a etapa mudar rota, regra, comando ou convenção.
+
+## Arquitetura de destino
+
+```
+src/
+  server.ts            entrypoint: createApp(deps) + listen
+  app.ts               createApp({ db }) -> middlewares, rotas, tratador de erro
+  http/
+    routes/            produtos, clientes, pedidos, frete, relatorios
+    controllers/       traduzem HTTP <-> service (status, formato de erro)
+    schemas/           schemas Zod de entrada (body, query, params)
+    middlewares/       log de requisicao, tratador de erro
+  services/            casos de uso: PedidoService, RelatorioService, ...
+  domain/
+    precos/            Strategy de desconto por tipo + frete (um lugar so)
+    pedido.ts          tipos e ciclo de vida (criado -> cancelado)
+  repositories/        ProdutoRepo, ClienteRepo, PedidoRepo (SQL parametrizado)
+  db/                  conexao, schema, seed
+
+  HTTP --> controller --> service --> domain (puro, sem I/O)
+                             |
+                             +------> repository --> SQLite
+```
+
+Os padrões adotados, cada um porque resolve um problema concreto do código atual:
+
+| Padrão | Problema que resolve |
+|---|---|
+| **Repository** | SQL espalhado nos handlers, parte dele concatenado |
+| **Service layer** (casos de uso) | Handlers que validam, calculam, gravam e respondem ao mesmo tempo (`POST /pedidos`) |
+| **Strategy** (desconto por tipo de cliente) | Regra de desconto copiada em 3 lugares. O `desconto_<tipo>` já é uma Strategy informal. |
+| **Factory com injeção de dependência** (`createApp({ db })`) | Singleton do `db.js` aberto no `require` |
+| **Middleware de erro centralizado** | `console.log(err)` + `res.status(500)` repetido em cada callback |
+| **Schemas de validação** (Zod) | Validação manual, incompleta e espalhada |
+
+## Ordem de execução
+
+As etapas mantêm a numeração usada no planejamento. A ordem de execução é:
+
+```
+[0] --> [1] --> [3] --> [2] --> [4] --> [5] --> [6] --> [7] --> [8]
+                 ^
+                 unica etapa que altera testes de caracterizacao
+```
+
+A etapa 3 vem antes da 2 porque os schemas Zod já tratam o `req.body` ausente. Com isso, o upgrade
+para o Express 5 não muda nenhuma resposta. A etapa 3 depende da 1 para os schemas já nascerem em TS,
+no lugar definitivo.
+
+Legenda das decisões: **Decidido** foi confirmado no planejamento. **Padrão proposto** é uma sugestão
+ainda não confirmada, a confirmar na etapa. **Em aberto** é decidido na própria etapa; as opções e a
+recomendação estão listadas.
+
+---
+
+## Etapa 0: Testes de caracterização (concluída)
+
+- **Change sugerida:** `add-characterization-tests` (arquivada em `2026-11-18-add-characterization-tests`)
+- **Depende de:** nada.
+- **Objetivo:** registrar o comportamento HTTP atual antes de qualquer refatoração.
+- **Escopo:** Vitest 5 + supertest, testes em TS, um banco temporário por arquivo, `app.js` exportando
+  o `app`, convenção `[atual]`, lacunas como `it.todo`.
+- **Fora de escopo:** corrigir bugs, testes unitários de funções internas.
+- **Decisões tomadas:** testes de caracterização (comportamento atual, inclusive bugs); em processo,
+  com supertest; Vitest; testes em `.test.ts`.
+- **Decisões em aberto:** nenhuma.
+- **Riscos:** nenhum pendente.
+- **Pronto quando:** feito. São 88 testes e 8 `it.todo`, com 88% de cobertura de linhas.
+
+## Etapa 1: Fundação
+
+- **Change sugerida:** `refactor-foundation`
+- **Depende de:** etapa 0.
+- **Objetivo:** criar a estrutura onde as demais etapas acontecem, sem mudar nenhuma lógica.
+- **Escopo:**
+  - pasta `src/` e mudança dos módulos atuais para ela com `git mv`, para preservar o histórico;
+  - `createApp({ db })` + `server.ts` (entrypoint com `listen`); o `db` passa a ser injetado, e o
+    singleton aberto no `require` deixa de existir;
+  - o `tsconfig` passa a cobrir `src/` com `allowJs`, e os módulos novos já nascem em `.ts`;
+  - a pipeline para rodar e empacotar (veja as decisões em aberto) e os scripts `start`, `test`,
+    `typecheck` ajustados;
+  - o `test/setup.ts` e o `test/helpers.ts` passam a usar `createApp` com um banco temporário. A linha
+    de import dos testes é a única mudança neles.
+- **Fora de escopo:** reescrever a lógica, trocar callbacks por `async/await`, atualizar dependências
+  de produção.
+- **Decisões tomadas:** `createApp` com injeção de dependência; TS com `allowJs` durante a transição.
+- **Decisões em aberto:**
+  - **Como rodar o TS:** (a) compilar com `tsc` para `dist/` e rodar `node dist/server.js`; ou
+    (b) executar TS direto no Node, com remoção de tipos nativa e sem build. Recomendação: (a), por
+    ser previsível e não restringir a sintaxe TS. A (b) exige `erasableSyntaxOnly`, ou seja, sem
+    `enum` e sem *parameter properties*.
+  - **Subir para o Node 24 LTS?** O `.nvmrc` hoje é 22, e o Node 22 entra em manutenção. A
+    recomendação é subir nesta etapa, se a pipeline escolhida se beneficiar disso (por exemplo,
+    remoção de tipos sem flag). O `engines` e o `.nvmrc` mudam juntos.
+- **Riscos:**
+  - Mover arquivos quebra imports → `git mv` e `npm test` depois de cada movimento.
+  - O seed do `db.js` depende de o arquivo não existir → manter a mesma semântica no `createApp`
+    (seed só em banco novo).
+- **Pronto quando:** `npm start` sobe a API pelo entrypoint novo com o mesmo log; `npm test` (88 e 8
+  todo) e `npm run typecheck` passam; nenhuma lógica de rota mudou (`git diff -M` mostra só
+  movimentos e a ligação do `createApp`).
+
+## Etapa 3: Validação com Zod e correções explícitas
+
+- **Change sugerida:** `validation-and-explicit-fixes`
+- **Depende de:** etapa 1.
+- **Objetivo:** fixar o contrato de entrada com Zod e corrigir, **de forma explícita**, os
+  comportamentos que são efeitos colaterais da implementação legada. É a única etapa que altera testes
+  de caracterização.
+- **Escopo:**
+  1. **Primeiro**, adicionar testes de caracterização para os casos ainda não cobertos que esta etapa
+     vai mudar: ids em texto (`"1"`), `nome: 123` / `email: true`, busca repetida. Eles registram o
+     comportamento atual antes da mudança.
+  2. Schemas Zod 4 em `src/http/schemas/`, usados pelos handlers legados agora e pelos controllers na
+     etapa 6.
+  3. As correções da tabela abaixo e a política de tipos estrita.
+  4. Atualizar os testes afetados (os `[atual]` corrigidos viram testes normais), o README, o
+     `docs/openapi.yaml`, o JSDoc e o `AGENTS.md`.
+- **Fora de escopo:** as regras de negócio *a confirmar* (veja "Fora da refatoração"), unificar o
+  formato de erro, transações (etapa 4).
+- **Decisões tomadas:**
+  - **Correções explícitas:**
+
+    | # | Hoje (`[atual]`) | Passa a ser |
+    |---|---|---|
+    | 1 | `GET /produtos?busca='` → 500 | 200, com a aspa tratada como caractere comum (`[]` no seed). `%` e `_` continuam como curingas. |
+    | 2 | `POST /pedidos` com `produto_id: "abc"` → 500 `Erro interno` | 400 `produto_id invalido no item N` |
+    | 3 | `POST /pedidos` com `cliente_id: "abc"` → 500 `Erro interno` | 400 `cliente_id invalido` |
+    | 4 | `GET /pedidos/abc/resumo` → 500 | 404 `Pedido nao encontrado` (igual a `GET /pedidos/abc`) |
+    | 5 | `Body vazio` inalcançável; sem corpo → `cliente_id obrigatorio` | Mantém `cliente_id obrigatorio` e remove o ramo morto |
+    | 6 | `validaCep` aceita `0131-0100` e `1.310100` | Estrito: `/^\d{5}-?\d{3}$/` depois do `trim` |
+
+  - **Zod nesta etapa**, e não na 6: adotar Zod é uma decisão de comportamento (o que é aceito e o
+    que é rejeitado), e a validação é definida uma única vez, no lugar definitivo.
+  - **Política de tipos estrita em tudo** (API interna, sem clientes externos): ids do corpo só como
+    `number` inteiro positivo (`"1"` → 400); `quantidade` inteiro de verdade (como hoje); `nome` e
+    `email` como string não vazia (`nome: 123` → 400); `email` sem validação de formato (seria regra
+    nova, não correção).
+  - **Mensagens:** usar `safeParse` e converter **o primeiro problema** encontrado na mensagem atual,
+    no formato atual da rota (`{erro}` ou `{error}`). Mensagens do próprio Zod nunca aparecem na
+    resposta. A ordem do `shape` reproduz a ordem atual: `cliente_id` → itens → item a item
+    (`produto_id` antes de `quantidade`); `nome`/`email` antes do CEP.
+  - **Obrigatório x inválido:** ausente (`undefined`/`null`) gera a mensagem de obrigatório, que é a
+    atual (`cliente_id obrigatorio`, `produto_id obrigatorio no item N`). Tipo ou formato errado gera
+    a de inválido.
+- **Padrões propostos (confirmar na etapa):**
+  - `cep` numérico (`20040020`) no `POST /clientes` → 400 `CEP invalido`. Hoje é aceito e há teste.
+  - `GET /frete`: `subtotal` ausente continua valendo 0; `subtotal` inválido (`abc`, `350reais`) → 400
+    `Subtotal invalido`. Hoje vale 0 ou o prefixo numérico, e há testes.
+  - Busca repetida (`?busca=a&busca=b`) → 400 `Busca invalida`.
+  - Query string e path continuam como texto convertido: "estrito" ali significa "só dígitos" para
+    ids (`/produtos/9`), e não "precisa ser number".
+  - Campos extras no corpo continuam **ignorados** (sem `z.strictObject`). Por exemplo, `tipo: 'vip'`
+    no `POST /clientes` continua sendo ignorado: é regra de negócio que o cliente cadastrado via API é
+    sempre `comum`.
+- **Decisões em aberto:** nenhuma além dos padrões propostos.
+- **Riscos:**
+  - A ordem dos problemas do Zod pode não reproduzir a ordem atual → os testes de ordem já existem;
+    se for preciso, validar em duas fases (topo, depois itens).
+  - O `subtotal` com `parseFloat` não tem equivalente direto no `z.coerce.number()` → usar um
+    `preprocess` próprio.
+  - Clientes já gravados com CEP fora do padrão → continuam funcionando, porque o frete só lê o
+    primeiro dígito e a validação só roda no cadastro. Conferir o `loja.db` de produção antes.
+- **Pronto quando:** cada mudança de comportamento tem o teste antigo atualizado e citado na change;
+  `grep -rn "\[atual\]" test` lista só as divergências de negócio; README, OpenAPI e `AGENTS.md` estão
+  atualizados; `npm test` e `npm run typecheck` passam.
+
+## Etapa 2: Express 5
+
+- **Change sugerida:** `upgrade-express-5`
+- **Depende de:** etapa 3.
+- **Objetivo:** ganhar o tratamento nativo de promises rejeitadas nos handlers, pré-requisito para o
+  `async/await` das etapas 4 a 6.
+- **Escopo:** `express@5` + `@types/express`; ajustar o que o Express 5 muda, preservando as
+  respostas.
+- **Fora de escopo:** reescrever handlers em `async` (etapa 6).
+- **Decisões tomadas:** preservar todas as respostas. Nenhum teste muda.
+- **Decisões em aberto:** manter o *query parser* `extended` (`app.set('query parser', 'extended')`)
+  ou adotar o `simple` padrão. Recomendação: o `simple`, se os testes continuarem passando, já que a
+  etapa 3 rejeita a busca repetida; senão, manter o `extended`.
+- **Riscos:**
+  - Sem corpo, o `req.body` passa a ser `undefined` → já tratado pelos schemas da etapa 3; conferir
+    as rotas sem schema.
+  - Mudanças na sintaxe de rotas do `path-to-regexp` → as rotas atuais (`/:id`, `/:id/resumo`) são
+    simples; os testes de 404 do `DELETE /pedidos/:id` cobrem o roteamento.
+- **Pronto quando:** `express` 5 instalado, `npm test` sem nenhuma mudança nos testes, `npm audit`
+  sem vulnerabilidades novas.
+
+## Etapa 4: Camada de dados
+
+- **Change sugerida:** `data-layer-repositories`
+- **Depende de:** etapa 2.
+- **Objetivo:** tirar o SQL dos handlers, parametrizar tudo e dar atomicidade às operações de pedido.
+- **Escopo:**
+  - `ProdutoRepo`, `ClienteRepo` e `PedidoRepo` com interface `Promise`, todo o SQL parametrizado
+    com `?`;
+  - **transações** na criação de pedido (pedido + itens + baixa de estoque) e no cancelamento
+    (status + devolução);
+  - troca ou upgrade do driver (veja as decisões em aberto) e o schema e o seed em `src/db/`.
+- **Fora de escopo:** mudar o schema das tabelas, criar índices (o `TODO` do `db.js` vira change
+  própria, se for desejado), regras de preço.
+- **Decisões tomadas:**
+  - Repositories com interface `Promise`, mesmo que o driver seja síncrono, para poder trocá-lo.
+  - Transações entram aqui. É a **única mudança de semântica** da etapa, e só aparece em caso de
+    falha do SQLite: a resposta `Pedido criado com erros`, com o pedido gravado pela metade, deixa de
+    existir. Isso não altera nenhum teste, porque esses caminhos são `it.todo`.
+- **Decisões em aberto:**
+  - **Driver:**
+
+    | Opção | Async? | Transações | Observação |
+    |---|---|---|---|
+    | `sqlite3` 6 + promisify | sim | manuais (`BEGIN`/`COMMIT`) | menor salto; corrige o `npm audit` atual (`node-gyp`) |
+    | `better-sqlite3` 13 | não (síncrono) | `db.transaction()` nativo | maduro e rápido; exige Node >= 22 |
+    | `node:sqlite` | não (síncrono) | manuais | sem dependência, mas emite `ExperimentalWarning` |
+
+    Recomendação: `better-sqlite3`, por ter transações nativas e simples atrás da interface `Promise`
+    dos repositories, ou `sqlite3` 6, se a prioridade for o menor salto.
+- **Riscos:**
+  - O driver síncrono deixa a interface `Promise` "artificial" → é aceito, em troca de poder trocar
+    de driver.
+  - Formato de números (`REAL`) e ordem das linhas sem `ORDER BY` diferentes entre drivers → os testes
+    comparam o JSON inteiro e a ordem da listagem.
+  - O pedido com produto repetido (estoque negativo) precisa continuar igual → há teste `[atual]`.
+- **Pronto quando:** nenhum SQL fora de `src/repositories/` e `src/db/`;
+  `grep -rn "' +\|+ '" src/repositories` não encontra SQL concatenado; `npm test` sem mudança nos
+  testes; `npm audit` sem as vulnerabilidades do `sqlite3` 5.
+
+## Etapa 5: Domínio de preços
+
+- **Change sugerida:** `pricing-domain`
+- **Depende de:** etapa 4.
+- **Objetivo:** concentrar as regras de preço (desconto e frete) num módulo de domínio puro, sem
+  I/O, e deixar as divergências **explícitas** em vez de escondidas em cópias.
+- **Escopo:**
+  - Strategy de desconto por tipo de cliente (`comum`, `vip`, `atacado`; tipo desconhecido → 0);
+  - um único cálculo de frete, sobre o subtotal antes do desconto, pelo CEP;
+  - as divergências viram **políticas com nome**, usadas por quem hoje tem a cópia divergente:
+    `POST /pedidos` usa a regra canônica, o resumo usa `comum > 500`, o relatório usa desconto com
+    `Math.round` e não conhece tipos novos;
+  - a precisão (`toFixed(2)`) centralizada num helper de dinheiro, reproduzindo exatamente os
+    arredondamentos atuais.
+- **Fora de escopo:** **corrigir** as divergências (veja "Fora da refatoração").
+- **Decisões tomadas:** as divergências continuam, só que com nome e documentadas no código
+  (`@todo Diverge de ...`).
+- **Decisões em aberto:** acrescentar testes unitários do domínio, além dos de HTTP. Recomendação:
+  sim, porque as funções puras são baratas de testar e documentam as regras.
+- **Riscos:**
+  - Mudar a ordem das operações de ponto flutuante muda centavos (por exemplo, `46.945.toFixed(2)`)
+    → os testes comparam os valores exatos; reproduzir a mesma sequência de cálculo.
+  - "Unificar sem querer" a divergência do resumo ou do relatório → há testes `[atual]` para as duas.
+- **Pronto quando:** `grep -rn "0.05\|0.1\b\|0.15\|>= 300" src` só encontra o módulo de preços;
+  `npm test` sem mudança nos testes.
+
+## Etapa 6: Camada HTTP e services
+
+- **Change sugerida:** `http-layer-services`. Pode ser dividida em `http-layer-catalogo` (produtos,
+  clientes, frete) e `http-layer-pedidos` (pedidos, resumo, cancelamento, relatório).
+- **Depende de:** etapa 5.
+- **Objetivo:** separar as responsabilidades em routes → controllers → services, com `async/await`
+  de ponta a ponta.
+- **Escopo:**
+  - services por caso de uso (`criarPedido`, `cancelarPedido`, `resumoPedido`, `relatorioVendas`,
+    ...);
+  - controllers finos: validação (schemas da etapa 3), chamada do service, resposta;
+  - middleware de erro centralizado, preservando os formatos `{erro}` e `{error}` por rota e as
+    mensagens atuais;
+  - erros de domínio tipados (por exemplo, `NaoEncontrado`, `EstoqueInsuficiente`) convertidos em
+    status no middleware;
+  - o log de requisição como middleware próprio;
+  - a remoção de `app.js` e `routes/` legados.
+- **Fora de escopo:** unificar o formato de erro, autenticação, rotas novas.
+- **Decisões tomadas:** `async/await` em tudo; o Express 5 repassa as rejeições ao middleware de erro,
+  sem wrappers.
+- **Decisões em aberto:** dividir a etapa em duas. Recomendação: dividir, se a change passar de
+  algumas centenas de linhas.
+- **Riscos:**
+  - É a maior etapa → divisão por recurso.
+  - O formato de erro (`{error}` só em clientes) se perder na centralização → o middleware recebe o
+    formato da rota; os testes comparam o corpo inteiro.
+- **Pronto quando:** não existem mais callbacks de banco nem contadores de callback; `app.js` e
+  `routes/` legados foram removidos; `npm test` sem mudança nos testes.
+
+## Etapa 7: TypeScript estrito
+
+- **Change sugerida:** `typescript-strict`
+- **Depende de:** etapa 6.
+- **Objetivo:** concluir a migração.
+- **Escopo:** remover o `allowJs`; `strict` total; sem `any` implícito ou explícito no código de
+  produção; tipos de domínio compartilhados (`Produto`, `Cliente`, `Pedido`, `TipoCliente`); tipos de
+  entrada inferidos dos schemas Zod (`z.infer`).
+- **Fora de escopo:** mudança de lógica.
+- **Decisões tomadas:** os módulos novos das etapas 1 a 6 já nascem em TS; esta etapa só fecha a
+  porta.
+- **Decisões em aberto:** adotar lint (ESLint com `typescript-eslint`) e formatação (Prettier).
+  Recomendação: decidir aqui, porque ajuda a manter o estrito.
+- **Riscos:** tipos "forçados" com `as` escondendo erros → revisar todo `as` na change.
+- **Pronto quando:** nenhum `.js` em `src/`; `npm run typecheck` passa com `strict`;
+  `grep -rn ": any\|as any" src` vazio; `npm test` sem mudança nos testes.
+
+## Etapa 8: Limpeza final
+
+- **Change sugerida:** `refactor-cleanup`
+- **Depende de:** etapa 7.
+- **Objetivo:** deixar o projeto coerente com a arquitetura nova.
+- **Escopo:** remover o código morto (`formata_moeda`, o comentário do `DELETE`, se ele não for mais
+  necessário como aviso); revisar dependências e scripts; `AGENTS.md` (Mapa, Armadilhas e Convenções)
+  refletindo a arquitetura nova; o README com os comandos atuais; este roteiro marcado como concluído.
+- **Fora de escopo:** mudança de comportamento.
+- **Decisões tomadas:** nenhuma.
+- **Decisões em aberto:** manter este roteiro como registro histórico ou movê-lo para um archive.
+- **Riscos:** remover um aviso que ainda protege (por exemplo, o de que pedidos não são excluídos) →
+  ele passa para o `AGENTS.md` ou para o código, se for removido daqui.
+- **Pronto quando:** `AGENTS.md` sem armadilhas que já não existem; `npm test`, `npm run typecheck` e
+  `npm audit` limpos.
+
+---
+
+## Fora da refatoração
+
+São regras de negócio *a confirmar*, registradas por testes `[atual]`. A refatoração as **preserva**.
+Cada uma vira uma change própria, quando o negócio decidir, em qualquer momento depois da etapa 5
+(que as deixa explícitas):
+
+- **Estoque negativo** com o mesmo produto em dois itens do pedido (`pedidos.test.ts`).
+- **Resumo do `comum` com `> 500`**, enquanto a cobrança usa `>= 500` (`resumo.test.ts`).
+- **Relatório com `Math.round`** no desconto, faturamento diferente da soma de `pedidos.total`
+  (`relatorio.test.ts`).
+- **Regra antiga do VIP** ("só acima de R$ 200", num comentário em `descontos.js`): hoje são 10% sobre
+  qualquer valor.
+- **Unificação do formato de erro** (`{erro}` x `{error}`): muda o contrato, então precisa de change
+  própria.
+
+## Fatos verificados
+
+Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidir.
+
+- **Express 5** (documentação do projeto): `req.body` não é mais inicializado como `{}` sem corpo; o
+  *query parser* padrão passa a ser `simple`; promises rejeitadas em handlers e middlewares vão para o
+  middleware de erro. Versão atual: 5.3.0 (`@types/express` 5.0.6).
+- **SQLite:** `sqlite3` 6.0.1 (Node >= 20.17), que corrige a cadeia `node-gyp` apontada hoje pelo
+  `npm audit`; `better-sqlite3` 13.2.0 (Node >= 22); `node:sqlite` disponível no Node 22.15 e no 24.18,
+  mas com `ExperimentalWarning` nos dois.
+- **Zod:** 4.6.7.
+- **Vitest 5** exige Node `^22.12.0 || ^24 || >=26`. TypeScript 7.0.2 funciona com `allowJs` no
+  `typecheck`.
+- **Comportamento atual que vai mudar na etapa 3** (verificado no código): ids em texto (`"1"`)
+  funcionam em `POST /pedidos`, porque são concatenados no SQL e as chaves de objeto em JS são strings;
+  `nome: 123` é gravado em `POST /clientes`, porque só se confere se o valor é *truthy*.
+
+## Registro de andamento
+
+| Etapa | Change | Status |
+|---|---|---|
+| 0. Testes de caracterização | `add-characterization-tests` | concluída (`2026-11-18-add-characterization-tests`) |
+| 1. Fundação | `refactor-foundation` | pendente |
+| 3. Validação com Zod e correções explícitas | `validation-and-explicit-fixes` | pendente |
+| 2. Express 5 | `upgrade-express-5` | pendente |
+| 4. Camada de dados | `data-layer-repositories` | pendente |
+| 5. Domínio de preços | `pricing-domain` | pendente |
+| 6. Camada HTTP e services | `http-layer-services` | pendente |
+| 7. TypeScript estrito | `typescript-strict` | pendente |
+| 8. Limpeza final | `refactor-cleanup` | pendente |
