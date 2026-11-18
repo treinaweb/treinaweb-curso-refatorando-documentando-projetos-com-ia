@@ -50,7 +50,10 @@ paths:
           required: false
           description: |
             Filtra pelo nome (contém o texto; maiúsculas e minúsculas são
-            iguais para letras sem acento).
+            iguais para letras sem acento). Aspas e outros caracteres são
+            procurados literalmente, exceto `%` (qualquer sequência) e `_`
+            (um caractere), que são curingas. Vazio lista todos. Repetido na
+            query ou em forma de objeto dá `400 Busca invalida`.
           schema:
             type: string
           example: cabo
@@ -67,6 +70,13 @@ paths:
                 - { id: 3, nome: Cabo USB-C 1m, preco: 29.9, estoque: 100 }
                 - { id: 4, nome: Cabo HDMI 2m, preco: 34.7, estoque: 60 }
                 - { id: 14, nome: Cabo de rede 5m, preco: 24.9, estoque: 80 }
+        '400':
+          description: Busca repetida na query ou em forma de objeto.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Erro'
+              example: { erro: Busca invalida }
         '500':
           description: Erro no banco.
           content:
@@ -136,7 +146,12 @@ paths:
       summary: Cadastra um cliente
       description: |
         O cliente cadastrado é sempre do tipo `comum`; não há endpoint para
-        mudar o tipo. O CEP é gravado sem hífen.
+        mudar o tipo (um `tipo` no corpo é ignorado). O CEP é gravado sem hífen.
+
+        Validação (400, só o primeiro problema, na ordem nome, email, cep):
+        `nome`/`email` ausente, `null` ou vazio dá `Nome e email sao obrigatorios`;
+        valor que não é texto dá `Nome invalido` / `Email invalido`; CEP que não
+        é texto ou fora do formato dá `CEP invalido`.
       requestBody:
         required: true
         content:
@@ -153,7 +168,7 @@ paths:
                 $ref: '#/components/schemas/Cliente'
               example: { id: 11, nome: Ana Souza, email: ana@example.com, cep: '04538133', tipo: comum }
         '400':
-          description: Nome/email ausentes ou CEP inválido.
+          description: Nome/email ausentes ou que não são texto, ou CEP inválido.
           content:
             application/json:
               schema:
@@ -161,6 +176,10 @@ paths:
               examples:
                 camposObrigatorios:
                   value: { error: Nome e email sao obrigatorios }
+                nomeInvalido:
+                  value: { error: Nome invalido }
+                emailInvalido:
+                  value: { error: Email invalido }
                 cepInvalido:
                   value: { error: CEP invalido }
         '500':
@@ -223,6 +242,12 @@ paths:
         Grava o pedido com status `criado` e baixa o estoque dos produtos.
         Não há transação: em caso de `500 Pedido criado com erros`, o pedido
         já foi gravado.
+
+        Validação (400, só o primeiro problema, nesta ordem): `cliente_id`,
+        `itens`, e item a item (`produto_id` antes de `quantidade`). Ausente ou
+        `null` dá "obrigatorio"; qualquer outro valor que não seja inteiro
+        positivo (inclusive texto como `"1"`) dá "invalido". Um item que não é
+        objeto conta como item sem `produto_id`. Campos extras são ignorados.
       requestBody:
         required: true
         content:
@@ -253,10 +278,15 @@ paths:
               examples:
                 semCliente:
                   value: { erro: cliente_id obrigatorio }
+                clienteInvalido:
+                  summary: cliente_id que não é inteiro positivo (texto, 0, decimal, negativo)
+                  value: { erro: cliente_id invalido }
                 semItens:
                   value: { erro: Pedido sem itens }
                 semProduto:
                   value: { erro: produto_id obrigatorio no item 1 }
+                produtoInvalido:
+                  value: { erro: produto_id invalido no item 1 }
                 quantidadeInvalida:
                   value: { erro: Quantidade invalida no item 1 }
                 estoqueInsuficiente:
@@ -436,17 +466,22 @@ paths:
         - name: cep
           in: query
           required: true
-          description: 8 dígitos, hífen opcional.
+          description: 5 dígitos, hífen opcional e 3 dígitos (espaços nas pontas são ignorados).
           schema:
             type: string
+            pattern: '^\s*\d{5}-?\d{3}\s*$'
           example: 30130-000
         - name: subtotal
           in: query
           required: false
-          description: Subtotal em reais, antes do desconto. Ausente ou inválido vale 0.
+          description: |
+            Subtotal em reais, antes do desconto: só dígitos, com decimal opcional após
+            ponto. Ausente ou vazio vale 0; qualquer outro formato (negativo, `1e3`,
+            `.5`, vírgula, sufixo) dá `400 Subtotal invalido`. O CEP é conferido antes.
           schema:
-            type: number
-          example: 120
+            type: string
+            pattern: '^(\d+(\.\d+)?)?$'
+          example: '120'
       responses:
         '200':
           description: Frete calculado.
@@ -456,12 +491,16 @@ paths:
                 $ref: '#/components/schemas/Frete'
               example: { cep: '30130000', subtotal: 120, frete: 15 }
         '400':
-          description: CEP ausente ou inválido.
+          description: CEP ausente ou inválido, ou subtotal fora do formato.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Erro'
-              example: { erro: CEP invalido }
+              examples:
+                cepInvalido:
+                  value: { erro: CEP invalido }
+                subtotalInvalido:
+                  value: { erro: Subtotal invalido }
 
   /relatorios/vendas:
     get:
@@ -510,11 +549,13 @@ components:
       name: id
       in: path
       required: true
-      description: Id numérico do recurso.
+      description: |
+        Id do recurso, só com dígitos (zeros à esquerda são aceitos). Um id fora desse
+        padrão (por exemplo `1.0`, `1e0`, `abc`) responde o mesmo 404 de um id inexistente.
       schema:
-        type: integer
-        minimum: 1
-      example: 1
+        type: string
+        pattern: '^\d+$'
+      example: '1'
 
   schemas:
     Produto:
@@ -569,14 +610,20 @@ components:
       properties:
         nome:
           type: string
+          minLength: 1
+          description: Texto não vazio (só espaços é aceito).
           example: Ana Souza
         email:
           type: string
-          description: Obrigatório; o formato não é validado.
+          minLength: 1
+          description: Texto não vazio; o formato não é validado.
           example: ana@example.com
         cep:
           type: string
-          description: 8 dígitos, hífen opcional. Gravado sem hífen.
+          description: |
+            5 dígitos, hífen opcional e 3 dígitos (espaços nas pontas são ignorados).
+            Só texto: um CEP numérico é recusado. Gravado sem hífen.
+          pattern: '^\s*\d{5}-?\d{3}\s*$'
           example: 04538-133
 
     StatusPedido:
@@ -650,6 +697,7 @@ components:
       properties:
         cliente_id:
           type: integer
+          minimum: 1
           example: 1
         itens:
           type: array
@@ -660,6 +708,7 @@ components:
             properties:
               produto_id:
                 type: integer
+                minimum: 1
                 example: 2
               quantidade:
                 type: integer

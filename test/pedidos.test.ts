@@ -17,9 +17,8 @@ const criado = (cliente_id: number, subtotal: number, desconto: number, frete: n
 })
 
 describe('POST /pedidos: validacoes', () => {
-  // Comportamento atual: o `if (!body)` de routes/pedidos.js nunca dispara, porque
-  // express.json() deixa `req.body` como `{}`; a mensagem `Body vazio` e inalcancavel.
-  it('[atual] sem corpo devolve 400 cliente_id obrigatorio (nao "Body vazio")', async () => {
+  // Sem corpo conta como `{}` (o antigo ramo `Body vazio` era inalcancavel e saiu).
+  it('sem corpo devolve 400 cliente_id obrigatorio', async () => {
     const res = await api().post('/pedidos')
     expect(res.status).toBe(400)
     expect(res.body).toEqual({ erro: 'cliente_id obrigatorio' })
@@ -101,63 +100,60 @@ describe('POST /pedidos: validacoes', () => {
     expect(await estoqueDe(11)).toBe(notebook)
   })
 
-  // Comportamento atual: os ids de produto sao concatenados no SQL
-  // (`WHERE id IN (...)`), entao um id nao numerico quebra a consulta.
-  it('[atual] produto_id nao numerico devolve 500 Erro interno (SQL concatenado)', async () => {
-    const res = await postPedido(1, [{ produto_id: 'abc', quantidade: 1 }])
-    expect(res.status).toBe(500)
-    expect(res.body).toEqual({ erro: 'Erro interno' })
+  // Ids do corpo: ausente ou null -> "obrigatorio"; qualquer outro valor que nao
+  // seja inteiro positivo -> "invalido" (antes "abc" dava 500 pelo SQL
+  // concatenado, 0/""/false davam "obrigatorio", 1.5 dava 404 e "1" era aceito).
+  it('cliente_id null devolve 400 cliente_id obrigatorio', async () => {
+    const res = await postPedido(null, [{ produto_id: 3, quantidade: 1 }])
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual({ erro: 'cliente_id obrigatorio' })
   })
 
-  // Comportamento atual: utils.buscar_cliente concatena o id no SQL.
-  it('[atual] cliente_id nao numerico devolve 500 Erro interno (SQL concatenado)', async () => {
-    const res = await postPedido('abc', [{ produto_id: 1, quantidade: 1 }])
-    expect(res.status).toBe(500)
-    expect(res.body).toEqual({ erro: 'Erro interno' })
-  })
-
-  // Comportamento atual: so se confere `!cliente_id`, entao valores falsy caem
-  // em "obrigatorio" e os demais seguem para a consulta do cliente.
-  it('[atual] cliente_id 0, "" ou false devolve 400 cliente_id obrigatorio', async () => {
-    for (const cliente_id of [0, '', false]) {
+  it('cliente_id que nao e inteiro positivo devolve 400 cliente_id invalido', async () => {
+    for (const cliente_id of ['abc', 0, '', false, 1.5, -3, '1']) {
       const res = await postPedido(cliente_id, [{ produto_id: 3, quantidade: 1 }])
       expect(res.status, JSON.stringify(cliente_id)).toBe(400)
-      expect(res.body).toEqual({ erro: 'cliente_id obrigatorio' })
+      expect(res.body).toEqual({ erro: 'cliente_id invalido' })
     }
   })
 
-  it('[atual] cliente_id 1.5 ou -3 devolve 404 Cliente nao encontrado', async () => {
-    for (const cliente_id of [1.5, -3]) {
-      const res = await postPedido(cliente_id, [{ produto_id: 3, quantidade: 1 }])
-      expect(res.status, JSON.stringify(cliente_id)).toBe(404)
-      expect(res.body).toEqual({ erro: 'Cliente nao encontrado' })
+  it('cliente_id e avaliado antes dos itens', async () => {
+    const res = await api().post('/pedidos').send({ cliente_id: 'abc', itens: [] })
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual({ erro: 'cliente_id invalido' })
+  })
+
+  it('produto_id que nao e inteiro positivo devolve 400 produto_id invalido', async () => {
+    for (const produto_id of ['abc', 0, '3', 1.5, -1, true]) {
+      const res = await postPedido(1, [
+        { produto_id: 1, quantidade: 1 },
+        { produto_id, quantidade: 1 },
+      ])
+      expect(res.status, JSON.stringify(produto_id)).toBe(400)
+      expect(res.body).toEqual({ erro: 'produto_id invalido no item 2' })
     }
   })
 
-  it('[atual] cliente_id e produto_id em texto ("1") criam o pedido', async () => {
-    const res = await postPedido('1', [{ produto_id: '3', quantidade: 1 }])
+  it('produto_id null devolve 400 produto_id obrigatorio', async () => {
+    const res = await postPedido(1, [{ produto_id: null, quantidade: 1 }])
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual({ erro: 'produto_id obrigatorio no item 1' })
+  })
+
+  // Item que nao e objeto conta como item vazio (antes `null` derrubava o
+  // handler com TypeError e o Express respondia 500 em HTML).
+  it('item que nao e objeto devolve 400 produto_id obrigatorio', async () => {
+    for (const item of [null, 5, 'x', [1]]) {
+      const res = await postPedido(1, [item as never])
+      expect(res.status, JSON.stringify(item)).toBe(400)
+      expect(res.body).toEqual({ erro: 'produto_id obrigatorio no item 1' })
+    }
+  })
+
+  it('pedido com ids validos e estoque cria normalmente', async () => {
+    const res = await postPedido(1, [{ produto_id: 3, quantidade: 1 }])
     expect(res.status).toBe(201)
     expect(res.body).toEqual(criado(1, 29.9, 0, 15, 44.9))
-  })
-
-  it('[atual] produto_id 0 devolve 400 produto_id obrigatorio', async () => {
-    const res = await postPedido(1, [{ produto_id: 0, quantidade: 1 }])
-    expect(res.status).toBe(400)
-    expect(res.body).toEqual({ erro: 'produto_id obrigatorio no item 1' })
-  })
-
-  it('item que nao e objeto (numero) devolve 400 produto_id obrigatorio', async () => {
-    const res = await postPedido(1, [5 as never])
-    expect(res.status).toBe(400)
-    expect(res.body).toEqual({ erro: 'produto_id obrigatorio no item 1' })
-  })
-
-  // Comportamento atual: `itens[i].produto_id` com item null lanca TypeError,
-  // e o Express responde com a pagina de erro padrao (HTML).
-  it('[atual] item null devolve 500 com a pagina de erro do Express', async () => {
-    const res = await postPedido(1, [null as never])
-    expect(res.status).toBe(500)
-    expect(res.headers['content-type']).toMatch(/^text\/html/)
   })
 })
 
@@ -314,12 +310,12 @@ describe('POST /pedidos: efeitos e GET /pedidos/:id', () => {
     expect(res.body).toEqual({ erro: 'Pedido nao encontrado' })
   })
 
-  // Comportamento atual: a afinidade INTEGER converte '<id>.0' no id.
-  it('[atual] GET /pedidos/:id decimal encontra o pedido', async () => {
+  // Ids no path so com digitos (antes '<id>.0' encontrava o pedido).
+  it('GET /pedidos/:id decimal devolve 404 mesmo com o pedido existindo', async () => {
     const pedido = await criarPedido(CLIENTE.comumCep0, [{ produto_id: 3, quantidade: 1 }])
     const res = await api().get(`/pedidos/${pedido.id}.0`)
-    expect(res.status).toBe(200)
-    expect(res.body).toMatchObject({ id: pedido.id, status: 'criado' })
+    expect(res.status).toBe(404)
+    expect(res.body).toEqual({ erro: 'Pedido nao encontrado' })
   })
 
   it('nao existe listagem GET /pedidos', async () => {

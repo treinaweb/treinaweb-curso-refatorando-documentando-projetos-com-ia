@@ -61,12 +61,14 @@ describe('POST /pedidos/:id/cancelar', () => {
     expect(res.body).toEqual({ erro: 'Pedido nao encontrado' })
   })
 
-  // Comportamento atual: a afinidade INTEGER converte '<id>.0' no id.
-  it('[atual] id decimal cancela o pedido', async () => {
+  // Ids no path so com digitos (antes '<id>.0' cancelava o pedido).
+  it('id decimal devolve 404 e nao cancela o pedido', async () => {
     const pedido = await criarPedido(CLIENTE.comumCep0, [{ produto_id: 3, quantidade: 1 }])
     const res = await api().post(`/pedidos/${pedido.id}.0/cancelar`)
-    expect(res.status).toBe(200)
-    expect(res.body).toEqual({ id: pedido.id, status: 'cancelado' })
+    expect(res.status).toBe(404)
+    expect(res.body).toEqual({ erro: 'Pedido nao encontrado' })
+    const gravado = await api().get(`/pedidos/${pedido.id}`)
+    expect(gravado.body.status).toBe('criado')
   })
 
   it.todo(

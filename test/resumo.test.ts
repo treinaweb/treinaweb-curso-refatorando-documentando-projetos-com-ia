@@ -116,19 +116,19 @@ describe('GET /pedidos/:id/resumo', () => {
     expect(res.body).toEqual({ erro: 'Pedido nao encontrado' })
   })
 
-  // Comportamento atual: o id e concatenado no SQL do resumo (app.js).
-  // Comportamento atual: o id concatenado `<id>.0` e um numero valido no SQL.
-  it('[atual] id decimal monta o resumo do pedido', async () => {
+  // Ids no path so com digitos: '<id>.0' (antes montava o resumo) e 'abc'
+  // (antes 500, pelo id concatenado no SQL) respondem como id inexistente.
+  it('id decimal devolve 404 mesmo com o pedido existindo', async () => {
     const pedido = await criarPedido(CLIENTE.comumCep0, [{ produto_id: 3, quantidade: 1 }])
     const res = await api().get(`/pedidos/${pedido.id}.0/resumo`)
-    expect(res.status).toBe(200)
-    expect(res.body).toMatchObject({ pedido: pedido.id })
+    expect(res.status).toBe(404)
+    expect(res.body).toEqual({ erro: 'Pedido nao encontrado' })
   })
 
-  it('[atual] id nao numerico devolve 500 (SQL concatenado)', async () => {
+  it('id nao numerico devolve 404', async () => {
     const res = await api().get('/pedidos/abc/resumo')
-    expect(res.status).toBe(500)
-    expect(res.body).toEqual({ erro: 'Erro ao gerar resumo' })
+    expect(res.status).toBe(404)
+    expect(res.body).toEqual({ erro: 'Pedido nao encontrado' })
   })
 })
 

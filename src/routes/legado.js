@@ -15,28 +15,41 @@ var utils = require('../utils')
  * Cria o router das rotas legadas sobre a conexao informada.
  *
  * @param {import('sqlite3').Database} db Conexao aberta (`abrirBanco`).
+ * @param {Object} v Validadores de entrada (middlewares montados em src/app.ts
+ *   a partir de src/http/schemas/).
+ * @param {import('express').RequestHandler} v.busca Query de `GET /produtos`
+ *   (src/http/schemas/busca.ts; 400 `Busca invalida`).
+ * @param {import('express').RequestHandler} v.idProduto `:id` de produto (404 `Produto nao encontrado`).
+ * @param {import('express').RequestHandler} v.idPedido `:id` de pedido (404 `Pedido nao encontrado`).
+ * @param {import('express').RequestHandler} v.frete Query de `GET /frete`
+ *   (src/http/schemas/frete.ts; 400 `CEP invalido` ou `Subtotal invalido`).
  * @returns {import('express').Router} Router montado na raiz por `createApp`.
  */
-function createLegadoRouter(db) {
+function createLegadoRouter(db, v) {
     var router = express.Router()
 
     /**
      * `GET /produtos`: lista os produtos.
      *
-     * Query opcional `busca`: filtra por `nome LIKE '%busca%'`
-     * (sem diferenciar maiusculas de minusculas para letras ASCII).
+     * Query opcional `busca`, validada antes pelo `v.busca`
+     * (src/http/schemas/busca.ts): um unico texto. Filtra por
+     * `nome LIKE '%' || busca || '%'`, com a busca como parametro: aspas e
+     * demais caracteres casam literalmente, e `%` e `_` continuam curingas.
+     * Nao diferencia maiusculas de minusculas para letras ASCII. Vazia lista
+     * todos.
      *
      * - 200: `[{ id, nome, preco, estoque }]`
+     * - 400: `{ erro: 'Busca invalida' }` (busca repetida ou objeto)
      * - 500: `{ erro: 'Erro ao buscar produtos' }`
-     *
-     * Atencao: `busca` e concatenada no SQL (codigo legado, nao copie o padrao).
      */
-    router.get('/produtos', function(req, res) {
+    router.get('/produtos', v.busca, function(req, res) {
         var sql = 'SELECT * FROM produtos'
+        var params = []
         if (req.query.busca) {
-            sql = sql + " WHERE nome LIKE '%" + req.query.busca + "%'"
+            sql = sql + ' WHERE nome LIKE ?'
+            params.push('%' + req.query.busca + '%')
         }
-        db.all(sql, function(err, rows) {
+        db.all(sql, params, function(err, rows) {
             if (err) {
                 console.log(err)
                 return res.status(500).json({erro: 'Erro ao buscar produtos'})
@@ -52,7 +65,7 @@ function createLegadoRouter(db) {
      * - 404: `{ erro: 'Produto nao encontrado' }`
      * - 500: `{ erro: 'Erro ao buscar produto' }`
      */
-    router.get('/produtos/:id', function(req, res) {
+    router.get('/produtos/:id', v.idProduto, function(req, res) {
         db.get('SELECT * FROM produtos WHERE id = ?', [req.params.id], function(err, row) {
             if (err) {
                 console.log(err)
@@ -69,16 +82,16 @@ function createLegadoRouter(db) {
      * `GET /frete?cep=&subtotal=`: simula o frete (usa `utils.calcula_frete`).
      *
      * E uma simulacao: usa o CEP informado na query, enquanto `POST /pedidos`
-     * usa o CEP do cadastro do cliente. `subtotal` ausente ou invalido vale 0.
+     * usa o CEP do cadastro do cliente. A query e validada antes pelo `v.frete`
+     * (src/http/schemas/frete.ts): `subtotal` ausente ou vazio vale 0; senao,
+     * so digitos com decimal opcional apos ponto.
      *
      * - 200: `{ cep, subtotal, frete }` (cep sem hifen)
-     * - 400: `{ erro: 'CEP invalido' }`
+     * - 400 (validacao, CEP antes do subtotal): `{ erro: 'CEP invalido' }` ou
+     *   `{ erro: 'Subtotal invalido' }`
      */
-    router.get('/frete', function(req, res) {
+    router.get('/frete', v.frete, function(req, res) {
         var cep = utils.validaCep(req.query.cep)
-        if (!cep) {
-            return res.status(400).json({erro: 'CEP invalido'})
-        }
         var subtotal = parseFloat(req.query.subtotal) || 0
         res.json({cep: cep, subtotal: subtotal, frete: utils.calcula_frete(cep, subtotal)})
     })
@@ -101,7 +114,7 @@ function createLegadoRouter(db) {
      *   subtotal > 500 (la e >= 500). Num pedido `comum` de exatamente R$ 500,00,
      *   o resumo mostra desconto 0 e um total diferente do cobrado (a confirmar).
      */
-    router.get('/pedidos/:id/resumo', function(req, res) {
+    router.get('/pedidos/:id/resumo', v.idPedido, function(req, res) {
         db.get('SELECT p.*, c.nome, c.tipo FROM pedidos p JOIN clientes c ON c.id = p.cliente_id WHERE p.id = ' + req.params.id, function(err, ped) {
             if (err) {
                 console.log(err)
@@ -232,7 +245,7 @@ function createLegadoRouter(db) {
      * - 404: `{ erro: 'Pedido nao encontrado' }`
      * - 500: `{ erro: 'Erro ao cancelar pedido' }`
      */
-    router.post('/pedidos/:id/cancelar', function(req, res) {
+    router.post('/pedidos/:id/cancelar', v.idPedido, function(req, res) {
         db.get('SELECT * FROM pedidos WHERE id = ?', [req.params.id], function(err, p) {
             if (err) {
                 console.log(err)

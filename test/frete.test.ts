@@ -36,16 +36,19 @@ describe('GET /frete', () => {
     expect(res.body).toEqual({ cep: '80010000', subtotal: 10, frete: 20 })
   })
 
-  it('subtotal ausente ou invalido vale 0 (e paga frete)', async () => {
+  it('subtotal ausente vale 0 (e paga frete)', async () => {
     const ausente = await api().get('/frete').query({ cep: '01310100' })
     expect(ausente.body).toEqual({ cep: '01310100', subtotal: 0, frete: 15 })
-    const invalido = await api().get('/frete').query({ cep: '01310100', subtotal: 'abc' })
-    expect(invalido.body).toEqual({ cep: '01310100', subtotal: 0, frete: 15 })
   })
 
-  it('subtotal com sufixo nao numerico usa o prefixo (parseFloat)', async () => {
-    const res = await api().get('/frete').query({ cep: '01310100', subtotal: '350reais' })
-    expect(res.body).toEqual({ cep: '01310100', subtotal: 350, frete: 0 })
+  // Subtotal so com digitos e decimal opcional apos ponto (antes `abc` valia 0
+  // e `350reais` valia 350, pelo parseFloat).
+  it('subtotal invalido ou com sufixo devolve 400', async () => {
+    for (const subtotal of ['abc', '350reais']) {
+      const res = await api().get('/frete').query({ cep: '01310100', subtotal })
+      expect(res.status, subtotal).toBe(400)
+      expect(res.body).toEqual({ erro: 'Subtotal invalido' })
+    }
   })
 
   it('CEP ausente ou invalido devolve 400', async () => {
@@ -56,20 +59,22 @@ describe('GET /frete', () => {
     }
   })
 
-  // Comportamento atual: `parseFloat(subtotal) || 0` aceita negativo, expoente,
-  // decimal sem parte inteira e corta no primeiro caractere nao numerico.
-  it('[atual] subtotal negativo e aceito e cobra frete', async () => {
-    const res = await api().get('/frete').query({ cep: '01310100', subtotal: '-10' })
-    expect(res.status).toBe(200)
-    expect(res.body).toEqual({ cep: '01310100', subtotal: -10, frete: 15 })
+  // Antes o parseFloat aceitava negativo, expoente, '.5' e cortava na virgula.
+  it('subtotal negativo, com expoente, sem parte inteira, com virgula ou repetido devolve 400', async () => {
+    for (const subtotal of ['-10', '1e3', '.5', '100,50']) {
+      const res = await api().get('/frete').query({ cep: '01310100', subtotal })
+      expect(res.status, subtotal).toBe(400)
+      expect(res.body).toEqual({ erro: 'Subtotal invalido' })
+    }
+    const repetido = await api().get('/frete?cep=01310100&subtotal=1&subtotal=2')
+    expect(repetido.status).toBe(400)
+    expect(repetido.body).toEqual({ erro: 'Subtotal invalido' })
   })
 
-  it('[atual] subtotal com expoente, sem parte inteira ou com virgula usa o parseFloat', async () => {
-    for (const [subtotal, valor] of [['1e3', 1000], ['.5', 0.5], ['100,50', 100]] as const) {
-      const res = await api().get('/frete').query({ cep: '01310100', subtotal })
-      expect(res.status, subtotal).toBe(200)
-      expect(res.body.subtotal, subtotal).toBe(valor)
-    }
+  it('subtotal decimal com ponto e aceito', async () => {
+    const res = await api().get('/frete').query({ cep: '01310100', subtotal: '299.99' })
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual({ cep: '01310100', subtotal: 299.99, frete: 15 })
   })
 
   it('subtotal vazio vale 0', async () => {
@@ -78,11 +83,14 @@ describe('GET /frete', () => {
     expect(res.body).toEqual({ cep: '01310100', subtotal: 0, frete: 15 })
   })
 
-  // Comportamento atual: utils.validaCep remove o primeiro hifen em qualquer posicao.
-  it('[atual] CEP com hifen fora do lugar e aceito', async () => {
-    const res = await api().get('/frete').query({ cep: '0131-0100' })
-    expect(res.status).toBe(200)
-    expect(res.body).toEqual({ cep: '01310100', subtotal: 0, frete: 15 })
+  // CEP estrito tambem na simulacao (antes o hifen era aceito em qualquer posicao).
+  it('CEP com hifen fora do lugar ou repetido devolve 400', async () => {
+    const hifen = await api().get('/frete').query({ cep: '0131-0100' })
+    expect(hifen.status).toBe(400)
+    expect(hifen.body).toEqual({ erro: 'CEP invalido' })
+    const repetido = await api().get('/frete?cep=01310100&cep=01310100')
+    expect(repetido.status).toBe(400)
+    expect(repetido.body).toEqual({ erro: 'CEP invalido' })
   })
 
   it('CEP e avaliado antes do subtotal', async () => {

@@ -74,7 +74,10 @@ Os exemplos abaixo foram gerados contra um banco recém-criado (dados de exemplo
 ### Produtos
 
 **`GET /produtos`**: lista todos os produtos. O parâmetro `busca` filtra pelo nome
-(contém o texto; maiúsculas e minúsculas são iguais).
+(contém o texto; maiúsculas e minúsculas são iguais para letras sem acento). Aspas e outros
+caracteres são procurados literalmente, exceto `%` (qualquer sequência) e `_` (um caractere), que
+funcionam como curingas. Vazio lista todos. `busca` repetida na query ou como objeto
+(`?busca[x]=...`) dá `400 {"erro":"Busca invalida"}`.
 
 ```
 curl "http://localhost:3000/produtos?busca=cabo"
@@ -93,8 +96,10 @@ curl "http://localhost:3000/produtos?busca=cabo"
 
 **`GET /clientes/:id`**: `200` com o cliente ou `404 {"error":"Cliente nao encontrado"}`.
 
-**`POST /clientes`**: body `{ nome, email, cep }`. O CEP tem 8 dígitos, com hífen opcional,
-e é gravado sem hífen. O cliente cadastrado é sempre do tipo `comum`, e não há endpoint para mudar o tipo.
+**`POST /clientes`**: body `{ nome, email, cep }`, todos texto. O CEP tem 5 dígitos, hífen opcional e
+3 dígitos (espaços nas pontas são ignorados), e é gravado sem hífen; um CEP numérico (`20040020` sem
+aspas) não é aceito. O formato do e-mail não é validado. O cliente cadastrado é sempre do tipo `comum`
+(um `tipo` no corpo é ignorado), e não há endpoint para mudar o tipo.
 
 ```
 curl -X POST http://localhost:3000/clientes \
@@ -105,13 +110,25 @@ curl -X POST http://localhost:3000/clientes \
 {"id":11,"nome":"Ana Souza","email":"ana@example.com","cep":"04538133","tipo":"comum"}
 ```
 
-Erros: `400 {"error":"Nome e email sao obrigatorios"}`, `400 {"error":"CEP invalido"}`.
+Erros `400`, só o primeiro problema, na ordem nome, email, CEP:
+
+| Erro (`{"error": ...}`)          | Quando                                              |
+|----------------------------------|-----------------------------------------------------|
+| `Nome e email sao obrigatorios`  | `nome` ou `email` ausente, `null` ou vazio          |
+| `Nome invalido`                  | `nome` que não é texto (por exemplo, `123`)         |
+| `Email invalido`                 | `email` que não é texto (por exemplo, `true`)       |
+| `CEP invalido`                   | CEP ausente, que não é texto ou fora do formato     |
 
 ### Pedidos
 
-**`POST /pedidos`**: body `{ cliente_id, itens: [{ produto_id, quantidade }] }`, com `quantidade`
-inteira e maior que zero. Calcula subtotal, desconto, frete e total (veja [Regras](#regras)), grava o
-pedido com status `criado` e baixa o estoque.
+**`POST /pedidos`**: body `{ cliente_id, itens: [{ produto_id, quantidade }] }`. `cliente_id`,
+`produto_id` e `quantidade` são números inteiros maiores que zero (texto como `"1"` não é aceito), e há
+ao menos um item. Campos extras são ignorados. Calcula subtotal, desconto, frete e total (veja
+[Regras](#regras)), grava o pedido com status `criado` e baixa o estoque.
+
+A validação responde só o primeiro problema, nesta ordem: `cliente_id`, `itens`, e item a item
+(`produto_id` antes de `quantidade`). Ausente ou `null` dá "obrigatorio"; qualquer outro valor fora do
+tipo dá "invalido". Um item que não é objeto conta como item sem `produto_id`.
 
 ```
 curl -X POST http://localhost:3000/pedidos \
@@ -124,7 +141,7 @@ curl -X POST http://localhost:3000/pedidos \
 
 | Status | Erro (`{"erro": ...}`)                                                                 |
 |--------|-----------------------------------------------------------------------------------------|
-| 400    | `cliente_id obrigatorio`, `Pedido sem itens`, `produto_id obrigatorio no item N`, `Quantidade invalida no item N`, `Estoque insuficiente para <produto>` |
+| 400    | `cliente_id obrigatorio`, `cliente_id invalido`, `Pedido sem itens`, `produto_id obrigatorio no item N`, `produto_id invalido no item N`, `Quantidade invalida no item N`, `Estoque insuficiente para <produto>` |
 | 404    | `Cliente nao encontrado`, `Produto <id> nao encontrado`                                |
 | 500    | `Erro interno`, `Erro ao salvar pedido`, `Pedido criado com erros`                     |
 
@@ -166,7 +183,8 @@ Erros: `400 {"erro":"Pedido nao pode ser cancelado (status cancelado)"}`, `404 {
 ### Frete
 
 **`GET /frete?cep=&subtotal=`**: simula o frete com o CEP informado. Na criação do pedido vale
-o CEP do cadastro do cliente. Se `subtotal` for omitido, vale 0.
+o CEP do cadastro do cliente. O CEP segue o mesmo formato do cadastro de clientes. `subtotal` tem só
+dígitos, com decimal opcional após ponto (`120`, `299.99`); omitido ou vazio, vale 0.
 
 ```
 curl "http://localhost:3000/frete?cep=30130-000&subtotal=120"
@@ -175,7 +193,8 @@ curl "http://localhost:3000/frete?cep=30130-000&subtotal=120"
 {"cep":"30130000","subtotal":120,"frete":15}
 ```
 
-Erro: `400 {"erro":"CEP invalido"}`.
+Erros `400` (o CEP é conferido antes do subtotal): `{"erro":"CEP invalido"}` e
+`{"erro":"Subtotal invalido"}` (negativo, `1e3`, `.5`, `100,50`, `350reais` ou repetido na query).
 
 ### Relatórios
 
@@ -200,6 +219,10 @@ As respostas de erro são JSON com uma mensagem, mas a chave varia:
 - `{"error": "..."}` em clientes.
 
 Rotas inexistentes retornam o 404 padrão do Express (HTML).
+
+Nas rotas com `:id`, o id precisa ter só dígitos (`/produtos/01` vale; `/produtos/1.0`, `/produtos/1e0` e
+`/produtos/abc` não). Um id fora desse padrão responde o mesmo 404 de um id inexistente, por exemplo
+`404 {"erro":"Produto nao encontrado"}`.
 
 ## Regras
 

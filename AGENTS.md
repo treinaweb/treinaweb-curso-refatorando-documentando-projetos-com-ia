@@ -26,12 +26,15 @@ Node 22 + Express 4 + SQLite3 (callbacks, sem ORM), em transição de JS para Ty
 ## Mapa
 
 - `src/server.ts`: entrypoint (lê `PORTA`/`DB_PATH`, abre o banco, `listen`).
-- `src/app.ts`: `createApp({ db })`, middlewares (`express.json()`, log) e montagem dos routers. O `db` é sempre
-  injetado: nenhum módulo abre conexão sozinho; os routers são factories `createXRouter(db)`.
+- `src/app.ts`: `createApp({ db })`, middlewares (`express.json()`, log), validadores e montagem dos routers. O `db`
+  é sempre injetado: nenhum módulo abre conexão sozinho; os routers são factories `createXRouter(db, validadores)`.
+- `src/http/schemas/`: schemas Zod da entrada (corpo, query e `:id`), com as mensagens de erro do projeto.
+  `src/http/middlewares/validar.ts`: aplica um schema e responde o primeiro problema no formato da rota.
 - `src/routes/legado.js`: rotas de produtos, `/frete`, `/pedidos/:id/resumo`, `/relatorios/vendas`, `/pedidos/:id/cancelar`.
 - `src/routes/clientes.js`, `src/routes/pedidos.js`: rotas já migradas para router por recurso.
 - `src/descontos.js`: desconto por tipo de cliente (`desconto_<tipo>`, despacho dinâmico).
-- `src/utils.js`: validação de CEP, `calcula_frete`, `buscar_cliente(db, id, cb)`.
+- `src/utils.js`: `validaCep` (regra única de CEP, também usada pelos schemas), `calcula_frete`,
+  `buscar_cliente(db, id, cb)`.
 - `src/db/index.js`: `abrirBanco(arquivo)`: conexão, schema e seed.
 - `docs/openapi.yaml`: contrato OpenAPI 3.0.3 das rotas (escrito à mão, estático; não é servido pela API).
 - `docs/refatoracao.md`: roteiro da refatoração (etapas, ordem, decisões tomadas e em aberto, registro de andamento).
@@ -58,15 +61,15 @@ o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o n
 - **Ciclo de vida:** `criado` → `cancelado` (só a partir de `criado`). Não existem outros status.
 - **Pedidos são cancelados, nunca excluídos.** O `DELETE` foi desativado de propósito; não reative.
 - Cliente cadastrado via API é sempre `comum`; não há endpoint para mudar o tipo.
-- CEP: 8 dígitos, hífen opcional, armazenado sem hífen.
+- CEP: texto com 5 dígitos, hífen opcional e 3 dígitos (espaços nas pontas ignorados), armazenado sem hífen.
 
 ## Armadilhas
 
 - **Regras de preço duplicadas.** O desconto é recalculado em `POST /pedidos`, `GET /pedidos/:id/resumo`
   e `GET /relatorios/vendas` (em vez de ler `pedidos.desconto`); o frete existe em `src/routes/pedidos.js`
   e em `utils.calcula_frete`. As cópias já divergiram. Ao mudar uma regra, alinhe todas ou pergunte.
-- **SQL concatenado** em código legado (busca de produtos, resumo, `buscar_cliente`, `POST /pedidos`).
-  Não copie esse padrão.
+- **SQL concatenado** em código legado (resumo, `buscar_cliente`, `POST /pedidos`). Hoje só recebe ids já validados
+  como inteiros pelos schemas, mas não copie esse padrão; a etapa 4 da refatoração o elimina.
 - **Sem transação** na criação/cancelamento de pedido; operações em loop com contador de callbacks.
 - Formato de erro inconsistente: `{erro}` no código legado, `{error}` em `src/routes/clientes.js`.
 
@@ -76,6 +79,12 @@ o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o n
 - Código novo: em TypeScript, no estilo de `src/routes/clientes.js` (`const`, arrow functions, `express.Router`) e
   **SQL sempre parametrizado com `?`**.
 - Rotas novas vão em `src/routes/`, como factory que recebe o `db`; não abra conexão fora de `src/server.ts` e dos testes.
+- **Validação de entrada só por schema Zod** em `src/http/schemas/`, aplicada com `validar()` e **injetada nas factories**
+  pelo `createApp` (o JS legado não consegue importar `.ts` sob o Vitest). Handlers não validam entrada à mão; ficam
+  com as regras que dependem do banco. A resposta usa só o primeiro problema, com mensagem do projeto (nunca do
+  Zod) no formato da rota. Ausente/`null` → "obrigatorio"; tipo ou formato errado → "invalido"; ids no path só com
+  dígitos, senão o 404 da rota. Campos extras são ignorados. No Zod 4, `z.unknown().refine()` torna a chave
+  obrigatória: envolva com `z.optional`.
 - **JSDoc em português** (`/** ... */`, sem acentos, como os demais comentários) em toda função e rota nova:
   entradas, resposta de sucesso e erros com status. Divergências entre cópias de regras são marcadas com
   `@todo Diverge de <fonte canônica>: ...` (e `(a confirmar)` quando dependem do negócio);

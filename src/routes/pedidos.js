@@ -15,9 +15,14 @@ var utils = require('../utils')
  * Cria o router de pedidos sobre a conexao informada.
  *
  * @param {import('sqlite3').Database} db Conexao aberta (`abrirBanco`).
+ * @param {Object} v Validadores de entrada (middlewares montados em src/app.ts
+ *   a partir de src/http/schemas/).
+ * @param {import('express').RequestHandler} v.idPedido `:id` de pedido (404 `Pedido nao encontrado`).
+ * @param {import('express').RequestHandler} v.criarPedido Corpo de `POST /pedidos`
+ *   (src/http/schemas/pedido.ts; 400 com a mensagem do primeiro problema).
  * @returns {import('express').Router} Router com `GET /:id` e `POST /`.
  */
-function createPedidosRouter(db) {
+function createPedidosRouter(db, v) {
   var router = express.Router()
 
   /**
@@ -53,14 +58,15 @@ function createPedidosRouter(db) {
     })
   }
 
-  router.get('/:id', getPedido)
+  router.get('/:id', v.idPedido, getPedido)
 
   /**
    * `POST /pedidos`: cria um pedido. E a fonte canonica das regras de preco:
    * os valores calculados aqui sao os gravados em `pedidos`.
    *
-   * Body: `{ cliente_id, itens: [{ produto_id, quantidade }] }`
-   * (`quantidade` inteiro > 0).
+   * Body: `{ cliente_id, itens: [{ produto_id, quantidade }] }`, validado antes
+   * pelo `v.criarPedido` (src/http/schemas/pedido.ts): ids e `quantidade` sao
+   * inteiros positivos, ha ao menos um item e campos extras sao ignorados.
    *
    * Calculo:
    * - `preco_unitario` = preco atual do produto (copiado para `itens_pedido`);
@@ -77,9 +83,10 @@ function createPedidosRouter(db) {
    *
    * Respostas:
    * - 201: `{ id, cliente_id, subtotal, desconto, frete, total, status: 'criado' }`
-   * - 400: `Pedido sem itens`, `cliente_id obrigatorio`,
-   *   `produto_id obrigatorio no item N`, `Quantidade invalida no item N`,
-   *   `Estoque insuficiente para <produto>`
+   * - 400 (validacao, so o primeiro problema): `cliente_id obrigatorio`,
+   *   `cliente_id invalido`, `Pedido sem itens`, `produto_id obrigatorio no item N`,
+   *   `produto_id invalido no item N`, `Quantidade invalida no item N`
+   * - 400: `Estoque insuficiente para <produto>`
    * - 404: `Cliente nao encontrado`, `Produto <id> nao encontrado`
    * - 500: `Erro interno`, `Erro ao salvar pedido`, `Pedido criado com erros`
    * (todas no formato `{ erro: '...' }`)
@@ -90,29 +97,11 @@ function createPedidosRouter(db) {
    *   inline da funcao de utils.js. Hoje produzem o mesmo resultado; ao mudar
    *   uma, alinhe a outra (esta e a que vale para o valor cobrado).
    */
-  router.post('/', function(req, res) {
+  router.post('/', v.criarPedido, function(req, res) {
     var inicio = Date.now()
     var body = req.body
-    if (!body) {
-      return res.status(400).json({erro: 'Body vazio'})
-    }
     var cliente_id = body.cliente_id
     var itens = body.itens
-    if (!cliente_id) {
-      return res.status(400).json({erro: 'cliente_id obrigatorio'})
-    }
-    if (!itens || !Array.isArray(itens) || itens.length == 0) {
-      return res.status(400).json({erro: 'Pedido sem itens'})
-    }
-    for (var i = 0; i < itens.length; i++) {
-      if (!itens[i].produto_id) {
-        return res.status(400).json({erro: 'produto_id obrigatorio no item ' + (i + 1)})
-      }
-      var q = itens[i].quantidade
-      if (!Number.isInteger(q) || q <= 0) {
-        return res.status(400).json({erro: 'Quantidade invalida no item ' + (i + 1)})
-      }
-    }
 
     utils.buscar_cliente(db, cliente_id, function(err, cliente) {
       if (err) {

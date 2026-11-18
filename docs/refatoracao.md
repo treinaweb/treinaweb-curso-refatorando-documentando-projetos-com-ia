@@ -152,7 +152,7 @@ recomendação estão listadas.
   todo) e `npm run typecheck` passam; nenhuma lógica de rota mudou (o commit dos movimentos mostra
   só renames; o seguinte, com `git diff -w`, só a ligação das factories e do `createApp`).
 
-## Etapa 3: Validação com Zod e correções explícitas
+## Etapa 3: Validação com Zod e correções explícitas (concluída)
 
 - **Change sugerida:** `validation-and-explicit-fixes`
 - **Depende de:** etapa 1.
@@ -163,8 +163,8 @@ recomendação estão listadas.
   1. **Primeiro**, adicionar testes de caracterização para os casos ainda não cobertos que esta etapa
      vai mudar: ids em texto (`"1"`), `nome: 123` / `email: true`, busca repetida. Eles registram o
      comportamento atual antes da mudança.
-  2. Schemas Zod 4 em `src/http/schemas/`, usados pelos handlers legados agora e pelos controllers na
-     etapa 6.
+  2. Schemas Zod 4 em `src/http/schemas/`, aplicados por `validar()` (`src/http/middlewares/`) e
+     injetados nas factories dos routers legados agora; usados direto pelos controllers na etapa 6.
   3. As correções da tabela abaixo e a política de tipos estrita.
   4. Atualizar os testes afetados (os `[atual]` corrigidos viram testes normais), o README, o
      `docs/openapi.yaml`, o JSDoc e o `AGENTS.md`.
@@ -194,18 +194,37 @@ recomendação estão listadas.
     (`produto_id` antes de `quantidade`); `nome`/`email` antes do CEP.
   - **Obrigatório x inválido:** ausente (`undefined`/`null`) gera a mensagem de obrigatório, que é a
     atual (`cliente_id obrigatorio`, `produto_id obrigatorio no item N`). Tipo ou formato errado gera
-    a de inválido.
-- **Padrões propostos (confirmar na etapa):**
-  - `cep` numérico (`20040020`) no `POST /clientes` → 400 `CEP invalido`. Hoje é aceito e há teste.
-  - `GET /frete`: `subtotal` ausente continua valendo 0; `subtotal` inválido (`abc`, `350reais`) → 400
-    `Subtotal invalido`. Hoje vale 0 ou o prefixo numérico, e há testes.
-  - Busca repetida (`?busca=a&busca=b`) → 400 `Busca invalida`.
-  - Query string e path continuam como texto convertido: "estrito" ali significa "só dígitos" para
-    ids (`/produtos/9`), e não "precisa ser number".
-  - Campos extras no corpo continuam **ignorados** (sem `z.strictObject`). Por exemplo, `tipo: 'vip'`
-    no `POST /clientes` continua sendo ignorado: é regra de negócio que o cliente cadastrado via API é
-    sempre `comum`.
-- **Decisões em aberto:** nenhuma além dos padrões propostos.
+    a de inválido. Isso muda os valores *falsy*: `0`, `""` e `false` em `cliente_id`/`produto_id`
+    davam "obrigatorio" e passam a "invalido"; `cliente_id: 1.5` dava 404 e passa a 400.
+  - **Validadores injetados nas factories:** o JS legado não consegue importar `.ts` sob o Vitest
+    (`require` nativo), então o `createApp` monta os middlewares e os passa às factories junto com o
+    `db` (`createPedidosRouter(db, { idPedido, criarPedido })`). Descartados: middlewares montados no
+    `createApp` (caminho duplicado) e converter os handlers para TS (invade as etapas 6 e 7).
+  - **Nome e email:** ausente, `null` ou `""` → `Nome e email sao obrigatorios` (como hoje); valor
+    que não é texto → as mensagens novas `Nome invalido` / `Email invalido`. Só espaços continua
+    aceito.
+  - **Ids no path em todas as rotas** (não só no resumo): só dígitos; senão, o 404 da rota. Muda
+    `/produtos/1.0`, `/1e0`, `/%201`, `/clientes/1.0` e `/<id>.0` de pedido, resumo e cancelamento, que
+    encontravam o registro pela afinidade INTEGER do SQLite. `/produtos/01` continua 200.
+  - **Item do pedido que não é objeto** (`null`, `5`) → `produto_id obrigatorio no item N`. `null`
+    dava 500 em HTML.
+  - **Correção 6 também vale para `GET /frete`**, porque o `validaCep` é compartilhado. Ele é a regra
+    única de CEP, reaproveitada pelos schemas.
+  - **Padrões confirmados:**
+    - `cep` numérico no `POST /clientes` → 400 `CEP invalido`.
+    - `GET /frete`: `subtotal` ausente ou vazio vale 0; fora de `^\d+(\.\d+)?$` (inclusive negativo,
+      `1e3`, `.5`, `100,50`, `350reais` e repetido) → 400 `Subtotal invalido`. O CEP é conferido antes.
+    - Busca repetida ou em forma de objeto → 400 `Busca invalida`.
+    - Campos extras no corpo continuam **ignorados** (sem `z.strictObject`), inclusive `tipo: 'vip'`
+      no `POST /clientes`.
+- **Decisões em aberto:** nenhuma.
+- **Observações:**
+  - A ordem dos problemas do Zod 4 seguiu a ordem das chaves e dos itens; não foi preciso validar em
+    fases.
+  - No Zod 4, `z.unknown().refine()` torna a chave obrigatória, com a mensagem do próprio Zod: os
+    campos opcionais usam `z.optional(...)`. Ficou registrado na convenção do `AGENTS.md`.
+  - O SQL concatenado que sobrou (resumo, `buscar_cliente`, ids do `POST /pedidos`) só recebe inteiros
+    validados; a etapa 4 o parametriza.
 - **Riscos:**
   - A ordem dos problemas do Zod pode não reproduzir a ordem atual → os testes de ordem já existem;
     se for preciso, validar em duas fases (topo, depois itens).
@@ -411,7 +430,7 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 |---|---|---|
 | 0. Testes de caracterização | `add-characterization-tests` | concluída (`2026-11-18-add-characterization-tests`) |
 | 1. Fundação | `refactor-foundation` | concluída (`2026-11-18-refactor-foundation`) |
-| 3. Validação com Zod e correções explícitas | `validation-and-explicit-fixes` | pendente |
+| 3. Validação com Zod e correções explícitas | `validation-and-explicit-fixes` | concluída (`validation-and-explicit-fixes`) |
 | 2. Express 5 | `upgrade-express-5` | pendente |
 | 4. Camada de dados | `data-layer-repositories` | pendente |
 | 5. Domínio de preços | `pricing-domain` | pendente |

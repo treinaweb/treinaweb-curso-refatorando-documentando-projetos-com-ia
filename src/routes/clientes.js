@@ -12,9 +12,14 @@ const { validaCep } = require('../utils')
  * Cria o router de clientes sobre a conexao informada.
  *
  * @param {import('sqlite3').Database} db Conexao aberta (`abrirBanco`).
+ * @param {Object} v Validadores de entrada (middlewares montados em src/app.ts
+ *   a partir de src/http/schemas/).
+ * @param {import('express').RequestHandler} v.idCliente `:id` de cliente (404 `Cliente nao encontrado`).
+ * @param {import('express').RequestHandler} v.criarCliente Corpo de `POST /clientes`
+ *   (src/http/schemas/cliente.ts; 400 `{ error }` com a mensagem do primeiro problema).
  * @returns {import('express').Router} Router com `GET /`, `GET /:id` e `POST /`.
  */
-const createClientesRouter = (db) => {
+const createClientesRouter = (db, v) => {
   const router = express.Router()
 
   /**
@@ -62,11 +67,15 @@ const createClientesRouter = (db) => {
   /**
    * `POST /clientes`: cadastra um cliente.
    *
-   * Body: `{ nome, email, cep }`. O CEP aceita hifen e e gravado sem ele.
-   * O tipo e sempre `comum` (nao ha endpoint para mudar o tipo).
+   * Body: `{ nome, email, cep }`, validado antes pelo `v.criarCliente`
+   * (src/http/schemas/cliente.ts). O CEP aceita hifen e espacos nas pontas e
+   * e gravado sem eles. O tipo e sempre `comum` (nao ha endpoint para mudar o
+   * tipo).
    *
    * - 201: `{ id, nome, email, cep, tipo: 'comum' }`
-   * - 400: `{ error: 'Nome e email sao obrigatorios' }` ou `{ error: 'CEP invalido' }`
+   * - 400 (validacao, so o primeiro problema, na ordem nome, email, cep):
+   *   `{ error: 'Nome e email sao obrigatorios' }`, `{ error: 'Nome invalido' }`,
+   *   `{ error: 'Email invalido' }` ou `{ error: 'CEP invalido' }`
    * - 500: `{ error: 'Erro ao salvar cliente' }`
    *
    * @param {import('express').Request} req
@@ -75,12 +84,6 @@ const createClientesRouter = (db) => {
   function criarCliente(req, res) {
     const { nome, email } = req.body
     const cep = validaCep(req.body.cep)
-    if (!nome || !email) {
-      return res.status(400).json({ error: 'Nome e email sao obrigatorios' })
-    }
-    if (!cep) {
-      return res.status(400).json({ error: 'CEP invalido' })
-    }
     const sql = 'INSERT INTO clientes (nome, email, cep, tipo) VALUES (?, ?, ?, ?)'
     db.run(sql, [nome, email, cep, 'comum'], function (err) {
       if (err) {
@@ -92,8 +95,8 @@ const createClientesRouter = (db) => {
   }
 
   router.get('/', listarClientes)
-  router.get('/:id', buscarCliente)
-  router.post('/', criarCliente)
+  router.get('/:id', v.idCliente, buscarCliente)
+  router.post('/', v.criarCliente, criarCliente)
 
   return router
 }

@@ -39,22 +39,23 @@ describe('GET /produtos', () => {
     expect(res.body).toEqual([])
   })
 
-  // Comportamento atual: `busca` e concatenada no SQL (app.js, codigo legado),
-  // entao uma aspa simples quebra a consulta. Corrigir exige uma change propria.
-  it("[atual] aspa simples na busca devolve 500 (SQL concatenado)", async () => {
+  // A busca e parametro do LIKE (antes era concatenada no SQL e a aspa dava 500).
+  it('aspa simples na busca e um caractere comum', async () => {
     const res = await api().get('/produtos').query({ busca: "'" })
-    expect(res.status).toBe(500)
-    expect(res.body).toEqual({ erro: 'Erro ao buscar produtos' })
+    expect(res.status).toBe(200)
+    expect(res.body).toEqual([])
+    const injecao = await api().get('/produtos').query({ busca: "' OR '1'='1" })
+    expect(injecao.status).toBe(200)
+    expect(injecao.body).toEqual([])
   })
 
-  // Comportamento atual: o query parser `extended` do Express 4 transforma a
-  // busca repetida em lista e `busca[x]` em objeto; concatenados no SQL, viram
-  // "a,b" e "[object Object]" e nao casam com nenhum nome.
-  it('[atual] busca repetida ou como objeto devolve lista vazia', async () => {
+  // O query parser do Express 4 transforma a busca repetida em lista e `busca[x]`
+  // em objeto (antes, concatenados no SQL, davam 200 com lista vazia).
+  it('busca repetida ou como objeto devolve 400', async () => {
     for (const url of ['/produtos?busca=a&busca=b', '/produtos?busca[x]=cabo']) {
       const res = await api().get(url)
-      expect(res.status, url).toBe(200)
-      expect(res.body, url).toEqual([])
+      expect(res.status, url).toBe(400)
+      expect(res.body, url).toEqual({ erro: 'Busca invalida' })
     }
   })
 
@@ -85,13 +86,13 @@ describe('GET /produtos/:id', () => {
     expect(res.body).toEqual({ erro: 'Produto nao encontrado' })
   })
 
-  // Comportamento atual: o id vai como texto para `WHERE id = ?`, e a afinidade
-  // INTEGER da coluna converte '1.0', '1e0' e ' 1' em 1.
-  it('[atual] id decimal, com expoente ou com espaco encontra o produto 1', async () => {
+  // Ids no path so com digitos: os demais respondem como id inexistente
+  // (antes a afinidade INTEGER do SQLite convertia '1.0', '1e0' e ' 1' em 1).
+  it('id decimal, com expoente ou com espaco devolve 404', async () => {
     for (const id of ['1.0', '1e0', '%201']) {
       const res = await api().get(`/produtos/${id}`)
-      expect(res.status, id).toBe(200)
-      expect(res.body).toEqual({ id: 1, nome: 'Mouse sem fio', preco: 50, estoque: 40 })
+      expect(res.status, id).toBe(404)
+      expect(res.body).toEqual({ erro: 'Produto nao encontrado' })
     }
   })
 
