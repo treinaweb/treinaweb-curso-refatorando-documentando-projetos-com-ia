@@ -154,7 +154,7 @@ recomendação estão listadas.
 
 ## Etapa 3: Validação com Zod e correções explícitas (concluída)
 
-- **Change sugerida:** `validation-and-explicit-fixes`
+- **Change sugerida:** `validation-and-explicit-fixes` (arquivada em `2026-11-18-validation-and-explicit-fixes`)
 - **Depende de:** etapa 1.
 - **Objetivo:** fixar o contrato de entrada com Zod e corrigir, **de forma explícita**, os
   comportamentos que são efeitos colaterais da implementação legada. É a única etapa que altera testes
@@ -430,7 +430,7 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 |---|---|---|
 | 0. Testes de caracterização | `add-characterization-tests` | concluída (`2026-11-18-add-characterization-tests`) |
 | 1. Fundação | `refactor-foundation` | concluída (`2026-11-18-refactor-foundation`) |
-| 3. Validação com Zod e correções explícitas | `validation-and-explicit-fixes` | concluída (`validation-and-explicit-fixes`) |
+| 3. Validação com Zod e correções explícitas | `validation-and-explicit-fixes` | concluída (`2026-11-18-validation-and-explicit-fixes`) |
 | 2. Express 5 | `upgrade-express-5` | pendente |
 | 4. Camada de dados | `data-layer-repositories` | pendente |
 | 5. Domínio de preços | `pricing-domain` | pendente |
