@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { api, appComBanco, SEED_CLIENTES } from './helpers'
 
-// routes/clientes.js usa o formato de erro `{ error }` (o legado usa `{ erro }`).
+// /clientes (src/http/routes/clientes.ts) usa o formato de erro `{ error }` (as demais rotas usam `{ erro }`).
 
 describe('GET /clientes', () => {
   it('lista os clientes do seed ordenados por id', async () => {

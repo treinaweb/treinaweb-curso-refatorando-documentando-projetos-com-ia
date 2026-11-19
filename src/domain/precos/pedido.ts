@@ -1,6 +1,7 @@
 /**
- * @file Subtotal e total do pedido, na mesma sequencia de calculo do codigo
- * legado (a ordem das operacoes de ponto flutuante muda centavos).
+ * @file Subtotal e total do pedido, numa sequencia de calculo fixa: a mesma com
+ * que os pedidos existentes foram gravados (a ordem das operacoes de ponto
+ * flutuante muda centavos).
  */
 import { arred2 } from './dinheiro'
 

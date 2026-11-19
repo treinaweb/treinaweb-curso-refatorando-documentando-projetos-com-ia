@@ -28,6 +28,8 @@ Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories 
   - **Testes de domínio** (`test/dominio/*.test.ts`): unitários das funções puras de `src/domain/`, e importam só de lá.
     Complementam os de caracterização, não os substituem.
 - Para verificar à mão sem sujar o banco local, use um banco descartável: `DB_PATH=/tmp/loja-teste.db PORTA=3999 npm start`.
+- **Dependências:** as de produção ficam em versão exata (`express`, `better-sqlite3`, `zod`). O `@types/node`
+  acompanha a versão maior do Node do `.nvmrc` (24); não suba para uma maior sem trocar o Node.
 - O README é a referência da API para quem a consome (rotas, payloads, respostas, erros, exemplos).
   Em caso de dúvida, a fonte da verdade das rotas continua sendo `src/app.ts` + `src/http/routes/`.
 
@@ -64,7 +66,8 @@ Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories 
   `EstoqueInsuficiente`, `TransicaoInvalida` (só a mensagem; o status fica no tratador HTTP).
 - `src/db/index.ts`: `abrirBanco(arquivo)`: conexão (`better-sqlite3`), schema e seed (só em banco novo).
 - `docs/openapi.yaml`: contrato OpenAPI 3.0.3 das rotas (escrito à mão, estático; não é servido pela API).
-- `docs/refatoracao.md`: roteiro da refatoração (etapas, ordem, decisões tomadas e em aberto, registro de andamento).
+- `docs/refatoracao.md`: roteiro da refatoração, **concluído em 2026-11-19** e mantido como registro histórico: o porquê
+  de cada camada, de cada exceção e de cada decisão (etapas 0 a 8, registro de andamento).
 - `test/`: testes de caracterização em TypeScript (`*.test.ts`, um arquivo por área), `setup.ts` e `helpers.ts`;
   `test/dominio/`: testes unitários do domínio.
   Configuração em `vitest.config.mts`, `tsconfig.json` (editor e typecheck de `src/` + `test/`) e `tsconfig.build.json`
@@ -108,6 +111,17 @@ grava o valor cobrado. Itens marcados *a confirmar* ainda não foram validados c
   Express 5 (`simple`) não entende colchetes e faria `?busca[x]=` listar todos os produtos em vez de
   `400 Busca invalida`. Não remova sem uma change de contrato.
 
+## Pendências
+
+Fora do escopo da refatoração; cada uma vira uma change própria quando for decidida.
+
+- **ESLint adiado:** o `typescript-eslint` não carrega com o TypeScript 7. Retomar quando ele suportar o TS 7 estável; o
+  plano está em `docs/refatoracao.md` (etapa 7) e no design da change arquivada `2026-11-19-typescript-strict`.
+- **Regras de negócio *a confirmar*:** registradas pelos testes `[atual]` (`grep -rn "\[atual\]" test`) e listadas em
+  Regras de negócio acima e em `docs/refatoracao.md` ("Fora da refatoração"). Mudar qualquer uma é decisão do negócio.
+- **Unificação do formato de erro** (`{erro}` x `{error}`): muda o contrato da API.
+- **Índices no schema:** `// TODO criar indices (pedido_id, cliente_id)` em `src/db/index.ts`.
+
 ## Convenções
 
 - Domínio e mensagens em português (sem acentos nas mensagens de erro).
@@ -143,9 +157,8 @@ grava o valor cobrado. Itens marcados *a confirmar* ainda não foram validados c
   `@todo Diverge de <fonte canônica>: ...` (e `(a confirmar)` quando dependem do negócio);
   liste-as com `grep -rn "Diverge de" --include='*.js' --include='*.ts' --exclude-dir=node_modules --exclude-dir=dist .`.
 - Mudanças de comportamento passam pelo OpenSpec: `/opsx:explore` → `/opsx:propose` → `/opsx:apply`.
-  Specs (quando existirem) ficam em `openspec/specs/`.
-- **Refatoração:** as changes de refatoração seguem `docs/refatoracao.md`. Cada uma cita a etapa, respeita o escopo
-  e as decisões registradas (só a etapa 3 altera testes de caracterização) e, na mesma change, atualiza o roteiro:
-  o registro de andamento e qualquer decisão que tenha mudado.
+  Specs ficam em `openspec/specs/`: `busca-produtos`, `falhas-do-banco`, `gravacao-pedidos` e `validacao-entrada`.
+- **Roteiro concluído:** `docs/refatoracao.md` é o registro das decisões da arquitetura atual. Mudanças novas seguem
+  o OpenSpec normalmente; ao rever uma decisão registrada lá, cite a etapa na change e explique o que mudou.
 - **Mantenha este arquivo atualizado:** ao mudar regras de negócio, comandos ou convenções, atualize o `AGENTS.md` na mesma mudança.
 - Ao mudar uma regra ou rota, atualize também o `README.md`, o JSDoc afetado e o `docs/openapi.yaml` na mesma mudança.

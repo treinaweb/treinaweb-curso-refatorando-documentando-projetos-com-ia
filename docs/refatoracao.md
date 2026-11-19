@@ -1,12 +1,16 @@
 # Roteiro de refatoração
 
-Referência para propor as changes da refatoração da Loja API. Cada etapa abaixo vira uma change
-do OpenSpec (`/opsx:propose <change sugerida>`), que cita a etapa, copia o escopo e as decisões para
-a proposal e o design, e **atualiza este roteiro na mesma change**: o registro de andamento e qualquer
-decisão que tenha mudado.
+> **Concluído em 2026-11-19.** Mantido como registro histórico das decisões da arquitetura atual. Os
+> pendentes (ESLint adiado, regras *a confirmar*, formato de erro, índices) estão na seção Pendências do
+> `AGENTS.md`. Mudanças novas seguem o OpenSpec normalmente.
 
-O roteiro é uma referência, não um contrato fechado: uma etapa pode rever uma decisão, desde que
-registre a mudança aqui.
+Foi a referência para propor as changes da refatoração da Loja API. Cada etapa abaixo virou uma change
+do OpenSpec (`/opsx:propose <change sugerida>`), que citava a etapa, copiava o escopo e as decisões para
+a proposal e o design, e **atualizava este roteiro na mesma change**: o registro de andamento e qualquer
+decisão que tivesse mudado.
+
+O roteiro foi uma referência, não um contrato fechado: várias etapas reviram decisões e as registraram
+aqui.
 
 ## Objetivo
 
@@ -75,6 +79,41 @@ Os padrões adotados, cada um porque resolve um problema concreto do código atu
 | **Factory com injeção de dependência** (`createApp({ db })`) | Singleton do `db.js` aberto no `require` |
 | **Middleware de erro centralizado** | `console.log(err)` + `res.status(500)` repetido em cada callback |
 | **Schemas de validação** (Zod) | Validação manual, incompleta e espalhada |
+
+## Arquitetura alcançada
+
+A estrutura final de `src/` (etapa 8):
+
+```
+src/
+  server.ts            entrypoint: createApp({ db }) + listen
+  app.ts               createApp({ db }): json, log, repositorios -> services -> routers
+  http/
+    routes/            produtos, clientes, frete, pedidos, relatorios (validar + controller + falhas)
+    controllers/       leem a entrada validada, chamam o service, respondem o sucesso
+    schemas/           schemas Zod de entrada (body, query, params); CEP com a regra unica
+    middlewares/       validar, erros (tratarErros -> falhas por rota), log
+  services/            casos de uso (criarServices): produtos, clientes, frete, pedidos, relatorio
+  domain/
+    precos/            regras de desconto como dados (REGRAS) + politicas com nome, frete, dinheiro
+    pedido.ts          ciclo de vida (criado -> cancelado)
+    tipos.ts           Produto, Cliente, Pedido, ItemPedido
+    erros.ts           NaoEncontrado, EstoqueInsuficiente, TransicaoInvalida
+  repositories/        produtos, clientes, pedidos (SQL parametrizado, prepare tipado)
+  db/                  conexao, schema, seed
+```
+
+Diferenças em relação ao destino planejado, cada uma com a etapa que decidiu:
+
+- **Factories, não classes:** `criarXRepo`, `criarXService` e `criarXRouter` devolvem objetos de funções, em vez de
+  `ProdutoRepo` e `PedidoService` (etapas 4 e 6).
+- **Strategy como dados:** as regras de desconto são entradas de `REGRAS` (taxa + elegibilidade), e as divergências
+  são políticas com nome (`PEDIDO`, `RESUMO`, `RELATORIO`), em vez de uma classe por tipo (etapa 5).
+- **Tratador de erro por rota:** cada rota termina com `falhas(...)`; não há tratador no nível do app, para preservar o
+  formato `{erro}`/`{error}` e o 400 em HTML do JSON malformado (etapa 6).
+- **O controller não decide status de erro:** quem decide são os erros de domínio, convertidos pelo tratador (etapa 6).
+- **Domínio maior:** além de `precos/` e `pedido.ts`, `tipos.ts` e `erros.ts` (etapas 6 e 7).
+- **Sem lint:** Prettier adotado, ESLint adiado (etapa 7).
 
 ## Ordem de execução
 
@@ -480,25 +519,36 @@ recomendação estão listadas.
   asserções (só formatação).
   Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
-## Etapa 8: Limpeza final
+## Etapa 8: Limpeza final (concluída)
 
 - **Change sugerida:** `refactor-cleanup`
 - **Depende de:** etapa 7.
 - **Objetivo:** deixar o projeto coerente com a arquitetura nova.
-- **Escopo:** remover o código morto (o bloco comentado do `DELETE` saiu na etapa 6, e o aviso ficou como
-  comentário no router de pedidos; o `formata_moeda` já saiu na etapa 5); atualizar o texto dos testes que ainda citam
-  `descontos.js` (o nome de um teste em `resumo.test.ts` e um comentário em `relatorio.test.ts`; só
-  texto, sem mudar o que testam); revisar dependências e scripts; `AGENTS.md` (Mapa, Armadilhas e Convenções)
-  refletindo a arquitetura nova; o README com os comandos atuais; este roteiro marcado como concluído.
-- **Fora de escopo:** mudança de comportamento.
-- **Decisões tomadas:** nenhuma.
-- **Decisões em aberto:** manter este roteiro como registro histórico ou movê-lo para um archive.
-- **Riscos:** remover um aviso que ainda protege (por exemplo, o de que pedidos não são excluídos) →
-  ele passa para o `AGENTS.md` ou para o código, se for removido daqui.
-- **Pronto quando:** `AGENTS.md` sem armadilhas que já não existem; `npm test`, `npm run typecheck` e
-  `npm audit` limpos.
-
----
+- **Escopo:** o código morto já tinha saído nas etapas 5 e 6 (o bloco comentado do `DELETE`, o `formata_moeda`,
+  `src/routes/`, `utils.js`); sobrou texto e documentação: referências a arquivos que não existem mais nos testes
+  e em comentários de `src/`; a política de versões das dependências; o `AGENTS.md`; este roteiro encerrado.
+- **Fora de escopo:** mudança de comportamento; os pendentes (índices, ESLint, regras *a confirmar*, formato de
+  erro); apagar as branches locais já integradas.
+- **Decisões tomadas:**
+  - **Este roteiro fica onde está, como registro histórico** (decisão do usuário; resposta à decisão em aberto).
+    Movê-lo quebraria as referências das changes arquivadas, e resumi-lo perderia os motivos das decisões. Os
+    pendentes foram para uma seção **Pendências** no `AGENTS.md`, que aponta para o detalhe aqui.
+  - **Todas as referências obsoletas nos testes** (decisão do usuário), não só as 2 previstas: 10 pontos em 6
+    arquivos, só comentários e um nome de teste (`'atacado usa descontos.js ...'` virou
+    `'atacado usa a regra canonica (15% com 10 unidades)'`). A `vitest list` mudou em exatamente uma linha, e o
+    diff sem comentários e sem esse nome é vazio. Os três "código legado" de `src/domain/precos/` passaram a
+    descrever a origem sem apontar para código que não existe.
+  - **Dependências de produção em versão exata:** o `zod` passou de `^4.6.7` para `4.6.7` (a versão instalada; o
+    lock só mudou o *range* do pacote raiz). O `@types/node` continua na versão maior 24, a do Node do `.nvmrc`.
+    `npm audit`: 0 vulnerabilidades.
+  - **`AGENTS.md`:** a convenção "Refatoração" virou "Roteiro concluído"; o Mapa descreve este roteiro como
+    histórico; os 4 specs existentes estão listados.
+  - **Nota "Arquitetura alcançada"** logo depois de "Arquitetura de destino", com as diferenças em relação ao destino.
+- **Decisões em aberto:** nenhuma.
+- **Riscos:** remover um aviso que ainda protege → nenhum saiu: o do `DELETE` continua no router de pedidos e no
+  `AGENTS.md`, e os pendentes ganharam uma seção própria.
+- **Pronto quando:** nenhuma referência a arquivo inexistente em `src/` e `test/`; `AGENTS.md` sem armadilhas que
+  já não existem e com Pendências; `npm test`, `npm run typecheck`, `npm run format:check` e `npm audit` limpos.
 
 ## Fora da refatoração
 
@@ -547,4 +597,4 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | 5. Domínio de preços | `pricing-domain` | concluída (`2026-11-18-pricing-domain`) |
 | 6. Camada HTTP e services | `http-layer-services` | concluída (`2026-11-19-http-layer-services`) |
 | 7. TypeScript estrito | `typescript-strict` | concluída (`2026-11-19-typescript-strict`) |
-| 8. Limpeza final | `refactor-cleanup` | pendente |
+| 8. Limpeza final | `refactor-cleanup` | concluída (change `refactor-cleanup`, a arquivar) |

@@ -2,7 +2,8 @@
  * Helpers compartilhados pelos testes de caracterizacao.
  *
  * Os testes so falam com a API por HTTP (supertest sobre o app) e importam
- * apenas deste arquivo; nao importam modulos internos (utils, descontos, db).
+ * apenas deste arquivo; nao importam modulos de src/ (services, domain,
+ * repositories, db).
  * Este arquivo e o test/setup.ts sao os unicos que montam o app e mexem no
  * banco: cada arquivo de teste roda num processo proprio, com um banco
  * temporario novo (o `abrirBanco` cria o schema e o seed nele), fechado e

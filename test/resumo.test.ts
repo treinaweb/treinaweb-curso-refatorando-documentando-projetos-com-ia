@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { api, appComBanco, CLIENTE, criarPedido } from './helpers'
 
-// GET /pedidos/:id/resumo (app.js) recalcula subtotal e desconto a partir dos
+// GET /pedidos/:id/resumo (src/services/pedidos.ts) recalcula subtotal e desconto a partir dos
 // itens gravados (nao le pedidos.desconto/total); o frete vem do valor gravado.
 
 describe('GET /pedidos/:id/resumo', () => {
@@ -58,7 +58,7 @@ describe('GET /pedidos/:id/resumo', () => {
     })
   })
 
-  it('atacado usa descontos.js (15% com 10 unidades)', async () => {
+  it('atacado usa a regra canonica (15% com 10 unidades)', async () => {
     const pedido = await criarPedido(CLIENTE.atacadoCep5, [
       { produto_id: 3, quantidade: 5 },
       { produto_id: 14, quantidade: 5 },
@@ -77,7 +77,7 @@ describe('GET /pedidos/:id/resumo', () => {
     expect(res.body.total).toBe(pedido.total)
   })
 
-  // Comportamento atual: @todo Diverge de POST /pedidos (app.js). O resumo aplica
+  // Comportamento atual: @todo Diverge de POST /pedidos (politica RESUMO). O resumo aplica
   // os 5% do cliente `comum` so com subtotal > 500 (la e >= 500). Num pedido de
   // exatamente R$ 500,00 o resumo mostra desconto 0 e total diferente do cobrado
   // (a confirmar com o negocio). Corrigir exige uma change propria.

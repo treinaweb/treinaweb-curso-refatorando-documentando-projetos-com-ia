@@ -103,7 +103,8 @@ export const RELATORIO: Politica = {
  * @param itens Itens do pedido; so `quantidade` e lida.
  * @returns A soma das quantidades.
  * @todo Hoje so chegam numeros (o schema de `POST /pedidos` e o banco garantem
- *   inteiros); o `string` vem do codigo JS legado. Estreitar para `number`
+ *   inteiros); o `string` vem da versao em JavaScript (antes da etapa 7 da
+ *   refatoracao, docs/refatoracao.md). Estreitar para `number`
  *   mudaria uma assercao de test/dominio/precos.test.ts, entao fica para uma
  *   change que possa alterar testes.
  */

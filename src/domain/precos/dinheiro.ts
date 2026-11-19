@@ -3,8 +3,9 @@
  */
 
 /**
- * Arredonda um valor em reais para 2 casas, exatamente como o codigo legado:
- * `Number(valor.toFixed(2))`.
+ * Arredonda um valor em reais para 2 casas, exatamente como
+ * `Number(valor.toFixed(2))`, o arredondamento com que os pedidos existentes
+ * foram gravados.
  *
  * Nao e o mesmo que `Math.round(valor * 100) / 100`: por causa da
  * representacao binaria, os dois divergem em alguns valores (por exemplo,

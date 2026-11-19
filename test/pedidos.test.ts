@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { api, appComBanco, CLIENTE, criarPedido, estoqueDe, ISO_8601, postPedido } from './helpers'
 
-// POST /pedidos (routes/pedidos.js) e a fonte canonica das regras de preco:
+// POST /pedidos (src/services/pedidos.ts) e a fonte canonica das regras de preco:
 // total = subtotal - desconto + frete, frete sobre o subtotal ANTES do desconto,
 // pelo CEP do cadastro do cliente.
 

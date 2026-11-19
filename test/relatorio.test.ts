@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { api, appComBanco, CLIENTE, criarPedido } from './helpers'
 
-// GET /relatorios/vendas (app.js). Este arquivo tem banco proprio e os testes
+// GET /relatorios/vendas (src/services/relatorio.ts). Este arquivo tem banco proprio e os testes
 // sao ACUMULATIVOS, em sequencia: cada um parte dos pedidos criados pelos anteriores.
-// O relatorio nao usa descontos.js: tem uma copia propria das regras.
+// O relatorio usa a politica `RELATORIO` (src/domain/precos/descontos.ts).
 
 describe('GET /relatorios/vendas', () => {
   it('sem pedidos devolve so `geral` zerado', async () => {
@@ -34,7 +34,7 @@ describe('GET /relatorios/vendas', () => {
     })
   })
 
-  // Comportamento atual: @todo Diverge de POST /pedidos (app.js). O relatorio
+  // Comportamento atual: @todo Diverge de POST /pedidos (politica RELATORIO). O relatorio
   // recalcula o desconto em vez de ler pedidos.desconto e arredonda com
   // Math.round para reais inteiros, entao o faturamento nao bate com a soma de
   // pedidos.total. Corrigir exige uma change propria.
