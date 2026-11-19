@@ -365,7 +365,7 @@ recomendação estão listadas.
 
 ## Etapa 6: Camada HTTP e services (concluída)
 
-- **Change sugerida:** `http-layer-services`. A divisão em `http-layer-catalogo` e `http-layer-pedidos` foi
+- **Change sugerida:** `http-layer-services` (arquivada em `2026-11-19-http-layer-services`). A divisão em `http-layer-catalogo` e `http-layer-pedidos` foi
   considerada e descartada (veja as decisões).
 - **Depende de:** etapa 5.
 - **Objetivo:** separar as responsabilidades em routes → controllers → services, com `async/await`
@@ -505,6 +505,6 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | 2. Express 5 | `upgrade-express-5` | concluída (`2026-11-18-upgrade-express-5`) |
 | 4. Camada de dados | `data-layer-repositories` | concluída (`2026-11-18-data-layer-repositories`) |
 | 5. Domínio de preços | `pricing-domain` | concluída (`2026-11-18-pricing-domain`) |
-| 6. Camada HTTP e services | `http-layer-services` | concluída (change `http-layer-services`, a arquivar) |
+| 6. Camada HTTP e services | `http-layer-services` | concluída (`2026-11-19-http-layer-services`) |
 | 7. TypeScript estrito | `typescript-strict` | pendente |
 | 8. Limpeza final | `refactor-cleanup` | pendente |
