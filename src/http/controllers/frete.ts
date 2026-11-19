@@ -15,8 +15,8 @@ import { freteSchema } from '../schemas/frete'
  */
 export function criarFreteController(frete: Services['frete']) {
   /** `GET /frete?cep=&subtotal=` -> 200 `{ cep, subtotal, frete }`. */
-  const simular: RequestHandler = async (_req, res) => {
-    const { cep, subtotal } = validado(res, 'query', freteSchema)
+  const simular: RequestHandler = async (req, res) => {
+    const { cep, subtotal } = validado(req, 'query', freteSchema)
     res.json(await frete.simular(cep, subtotal))
   }
 

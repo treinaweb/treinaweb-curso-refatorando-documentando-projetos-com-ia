@@ -8,8 +8,8 @@ import { EstoqueInsuficiente, NaoEncontrado, TransicaoInvalida } from '../domain
 import { podeCancelar } from '../domain/pedido'
 import * as precos from '../domain/precos'
 import type { Repositorios } from '../repositories'
-import type { ItemComNome, ItemDetalhado, Pedido, PedidoComCliente } from '../repositories/pedidos'
-import type { Produto } from '../repositories/produtos'
+import type { Pedido, Produto } from '../domain/tipos'
+import type { ItemComNome, ItemDetalhado, PedidoComCliente } from '../repositories/pedidos'
 import { FalhaDoBanco } from './erros'
 
 /** Item pedido no corpo de `POST /pedidos` (ja validado). */

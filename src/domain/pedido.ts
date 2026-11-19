@@ -14,6 +14,7 @@ export type StatusPedido = 'criado' | 'cancelado'
  * @example podeCancelar('criado')    // true
  * @example podeCancelar('cancelado') // false
  * @param status Status gravado (texto vindo do banco).
- * @returns `true` se a transicao para `cancelado` e permitida.
+ * @returns `true` se a transicao para `cancelado` e permitida (e o status e
+ *   `criado`).
  */
-export const podeCancelar = (status: string): boolean => status === 'criado'
+export const podeCancelar = (status: string): status is 'criado' => status === 'criado'

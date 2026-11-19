@@ -25,8 +25,8 @@ export function criarClientesController(clientes: Services['clientes']) {
   }
 
   /** `POST /clientes` -> 201 `{ id, nome, email, cep, tipo: 'comum' }`. */
-  const criar: RequestHandler = async (_req, res) => {
-    res.status(201).json(await clientes.criar(validado(res, 'body', criarClienteSchema)))
+  const criar: RequestHandler = async (req, res) => {
+    res.status(201).json(await clientes.criar(validado(req, 'body', criarClienteSchema)))
   }
 
   return { listar, buscar, criar }

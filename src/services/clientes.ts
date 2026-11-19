@@ -3,7 +3,8 @@
  */
 import { NaoEncontrado } from '../domain/erros'
 import type { Repositorios } from '../repositories'
-import type { Cliente, NovoCliente } from '../repositories/clientes'
+import type { Cliente } from '../domain/tipos'
+import type { NovoCliente } from '../repositories/clientes'
 
 /**
  * Cria o service de clientes.

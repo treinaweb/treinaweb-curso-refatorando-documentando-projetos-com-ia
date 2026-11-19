@@ -54,11 +54,13 @@ const statusDeDominio = (erro: ErroDeDominio): number | undefined => {
 export const tratarErros =
   (formato: Formato) =>
   (mensagens: MensagensFalha): ErrorRequestHandler =>
-  (erro, _req, res, _next) => {
-    const status = erro instanceof ErroDeDominio ? statusDeDominio(erro) : undefined
-    if (status !== undefined) {
-      res.status(status).json({ [formato]: erro.message })
-      return
+  (erro: unknown, _req, res, _next) => {
+    if (erro instanceof ErroDeDominio) {
+      const status = statusDeDominio(erro)
+      if (status !== undefined) {
+        res.status(status).json({ [formato]: erro.message })
+        return
+      }
     }
     const mensagem = erro instanceof FalhaDoBanco ? (mensagens[erro.fase] ?? mensagens.padrao) : mensagens.padrao
     console.error(erro instanceof FalhaDoBanco ? erro.cause : erro)

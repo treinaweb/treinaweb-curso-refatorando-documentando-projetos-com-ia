@@ -28,7 +28,10 @@ Melhorar a legibilidade e a manutenção do código sem mudar o comportamento da
    da refatoração. Da etapa 2 em diante, na ordem de execução, nenhum teste existente muda: se um teste
    quebrar, a refatoração mudou o comportamento sem querer. Nenhum `*.test.ts` muda fora da etapa 3:
    eles importam só de `test/helpers.ts`. Só a infraestrutura de teste (`helpers.ts` e `setup.ts`) pode
-   mudar para acompanhar a estrutura, como na etapa 1 (`createApp` + `abrirBanco`).
+   mudar para acompanhar a estrutura, como na etapa 1 (`createApp` + `abrirBanco`). **Exceção (etapa 7,
+   decisão do usuário):** formatação mecânica pelo Prettier, num commit próprio, sem mudar nenhuma
+   asserção, nome ou contagem de testes. Acrescentar testes novos (como nas etapas 4 e 6) sempre foi
+   permitido.
 3. **Regras de negócio *a confirmar* são preservadas.** Os testes `[atual]` que registram divergências
    de negócio (veja "Fora da refatoração") continuam passando como estão. Mudá-las é decisão do
    negócio e vira change própria.
@@ -399,7 +402,8 @@ recomendação estão listadas.
     `req.query` não pode ser reatribuído), e o controller o lê com `validado(res, origem, schema)`, tipado pelo
     schema. O CEP sai normalizado (`transform`) e o `subtotal` do `/frete` sai como número; a regra do CEP
     passou para `src/http/schemas/cep.ts` e o `utils.js` saiu. Ids do path continuam texto: um `Number` faria
-    um id gigante perder precisão.
+    um id gigante perder precisão. (Revisto na etapa 7: nada é guardado em `res.locals`; o
+    `validado(req, origem, schema)` reaplica o schema.)
   - **Service para tudo**, inclusive as leituras sem regra e o `/frete`: o controller só chama service.
   - **Injeção:** só os repositories (dependem do `db`); domínio e schemas são importados direto, porque o
     motivo da injeção (o JS legado não importa `.ts` sob o Vitest) deixou de existir.
@@ -423,22 +427,58 @@ recomendação estão listadas.
   sem mudança nos testes existentes (inclusive os de falha do banco da etapa 4).
   Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
-## Etapa 7: TypeScript estrito
+## Etapa 7: TypeScript estrito (concluída)
 
 - **Change sugerida:** `typescript-strict`
 - **Depende de:** etapa 6.
-- **Objetivo:** concluir a migração.
-- **Escopo:** remover o `allowJs`; `strict` total; sem `any` implícito ou explícito no código de
-  produção; tipos de domínio compartilhados (`Produto`, `Cliente`, `Pedido`, `TipoCliente`); tipos de
-  entrada inferidos dos schemas Zod (`z.infer`).
-- **Fora de escopo:** mudança de lógica.
-- **Decisões tomadas:** os módulos novos das etapas 1 a 6 já nascem em TS; esta etapa só fecha a
-  porta.
-- **Decisões em aberto:** adotar lint (ESLint com `typescript-eslint`) e formatação (Prettier).
-  Recomendação: decidir aqui, porque ajuda a manter o estrito.
-- **Riscos:** tipos "forçados" com `as` escondendo erros → revisar todo `as` na change.
-- **Pronto quando:** nenhum `.js` em `src/`; `npm run typecheck` passa com `strict`;
-  `grep -rn ": any\|as any" src` vazio; `npm test` sem mudança nos testes.
+- **Objetivo:** concluir a migração e fechar as portas que o `strict` deixa abertas.
+- **Escopo:** o que sobrou depois das etapas 4 a 6, que já tinham tirado todo `.js` de `src/`, ligado o
+  `strict` e tipado a entrada pelos schemas: flags extras do compilador, fim do `allowJs`, os `as` dos
+  repositories, o `any` vindo de biblioteca, tipos de domínio compartilhados e a decisão sobre lint e
+  formatação.
+- **Fora de escopo:** mudança de lógica; validar as linhas do banco em tempo de execução; estreitar
+  `quantidadeTotal`; formatar Markdown, YAML ou JSON; a limpeza da etapa 8.
+- **Decisões tomadas:**
+  - **Flags extras** nos dois `tsconfig`: `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
+    `noImplicitOverride`, `noUnusedLocals`, `noUnusedParameters`, `noImplicitReturns` e
+    `noFallthroughCasesInSwitch`; sai o `allowJs`. Só o `noUncheckedIndexedAccess` exigiu correções (11:
+    o relatório passou a obter o grupo uma vez, com a mesma sequência de somas e arredondamentos, e o
+    `validar` ganhou um ramo explícito, inalcançável, para `issues[0]`).
+  - **Sem `as` em `src/`:** os 14 `as` dos repositories viraram o genérico do `better-sqlite3`
+    (`db.prepare<[parametros], Linha>(sql)`), que também tipa os `?`. O tipo da linha continua garantido
+    pelo schema de `src/db/`, não em tempo de execução (validar com Zod foi descartado: regra nova e custo
+    em toda leitura).
+  - **Tipos de domínio em `src/domain/tipos.ts`** (`Produto`, `Cliente`, `Pedido`, `ItemPedido`), com
+    `tipo` e `status` como `string`, porque o banco aceita qualquer texto e as regras dependem disso. No
+    lugar do `TipoCliente` previsto, `TipoConhecido` só confere os literais de `REGRAS` e
+    `TIPOS_RELATORIO`; os tipos públicos continuam largos, para não mudar os testes de domínio. Os tipos de
+    consulta e de gravação ficam nos repositories. `podeCancelar` virou um estreitamento
+    (`status is 'criado'`).
+  - **Sem o `any` das bibliotecas:** `validado(req, origem, schema)` reaplica o schema em vez de ler o
+    `res.locals` (revê a etapa 6). Uma *augmentation* do `Locals` não resolveria, porque o padrão do
+    Express é `Record<string, any>` e a interseção continua `any`; um `WeakMap` exigiria `as`. O tratador
+    de erros anota `erro: unknown`.
+  - **`quantidadeTotal(number | string)` mantido**, com `@todo`: estreitar mudaria uma asserção de teste
+    de domínio.
+  - **Decisão em aberto respondida (formatação):** Prettier 3.10.1 com o estilo existente
+    (`semi: false`, `singleQuote`, `trailingComma: 'all'`, `printWidth: 120`), só para `.ts`/`.mts`/`.mjs`,
+    com os scripts `format` e `format:check`. A reformatação (13 arquivos, 6 de teste) foi num commit
+    próprio, com a exceção ao invariante 2 registrada acima.
+  - **Decisão em aberto respondida (lint): ESLint adiado.** O `typescript-eslint` 8.73 não carrega com o
+    TypeScript 7 (aceita `typescript <6.1.0` e lança `does not support TS 7.0`). O spike da montagem lado
+    a lado (`typescript` = alias `@typescript/typescript6`, TS 7 com outro nome) falhou: o pacote do TS 6
+    depende de `@typescript/old` (`typescript@^6`), que expõe o binário `tsc` e tomou o lugar do TS 7. Entre
+    chamar o TS 7 pelo caminho nos scripts (com `npx tsc` e o editor no TS 6) e adiar, o usuário escolheu
+    adiar. **Retomar** quando o `typescript-eslint` suportar o TS 7 estável; o plano (configuração *flat*,
+    `strictTypeChecked`, `as` proibido em `src/`, `no-unsafe-*` desligado em `test/`) está no design da
+    change `typescript-strict`. Até lá, "sem `as`/`any`" é conferido por `grep`.
+- **Decisões em aberto:** nenhuma (o ESLint adiado tem condição de retomada).
+- **Riscos:** sem lint, um `as` ou `any` pode voltar → convenção no `AGENTS.md` com o `grep` de
+  conferência.
+- **Pronto quando:** nenhum `.js` em `src/`; `npm run typecheck` passa com `strict` e os flags extras;
+  `grep -rnE " as [A-Z(]|: any|as any" src` vazio; `npm run format:check` limpo; `npm test` sem mudança nas
+  asserções (só formatação).
+  Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
 ## Etapa 8: Limpeza final
 
@@ -506,5 +546,5 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | 4. Camada de dados | `data-layer-repositories` | concluída (`2026-11-18-data-layer-repositories`) |
 | 5. Domínio de preços | `pricing-domain` | concluída (`2026-11-18-pricing-domain`) |
 | 6. Camada HTTP e services | `http-layer-services` | concluída (`2026-11-19-http-layer-services`) |
-| 7. TypeScript estrito | `typescript-strict` | pendente |
+| 7. TypeScript estrito | `typescript-strict` | concluída (change `typescript-strict`, a arquivar) |
 | 8. Limpeza final | `refactor-cleanup` | pendente |

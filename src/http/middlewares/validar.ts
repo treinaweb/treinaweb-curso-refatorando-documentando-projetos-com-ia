@@ -3,12 +3,14 @@
  *
  * Os schemas ficam em src/http/schemas/ e definem as mensagens do projeto no
  * `error` de cada campo; este middleware nunca devolve mensagens do Zod.
- * O valor parseado (com os `transform` dos schemas, como o CEP sem hifen) fica
- * em `res.locals.validado[origem]` e e lido pelos controllers com
- * {@link validado}; `req` nao e alterado (no Express 5, `req.query` nem pode
- * ser reatribuido).
+ * O `validar` so confere e responde; `req` nao e alterado (no Express 5,
+ * `req.query` nem pode ser reatribuido). O controller obtem o valor parseado
+ * (com os `transform` dos schemas, como o CEP sem hifen) com {@link validado},
+ * que reaplica o mesmo schema: assim a entrada sai tipada pelo schema, sem
+ * `any` (os `locals` da resposta do Express sao `Record<string, any>`) e sem
+ * `as`.
  */
-import type { RequestHandler, Response } from 'express'
+import type { Request, RequestHandler } from 'express'
 import type { z, ZodType } from 'zod'
 
 /** Parte da requisicao validada. */
@@ -54,8 +56,7 @@ export function resolverMensagem(mensagem: string, caminho: readonly PropertyKey
 /**
  * Cria o middleware que valida `req[origem]` com o schema.
  *
- * - Valido: guarda o valor parseado em `res.locals.validado[origem]` e chama
- *   `next()`, sem alterar a requisicao.
+ * - Valido: chama `next()`, sem alterar a requisicao.
  * - Invalido: responde `status` (padrao 400) com `{ [formato]: mensagem }`,
  *   usando so o primeiro problema encontrado.
  *
@@ -66,32 +67,34 @@ export function validar({ schema, origem, formato, status = 400, mensagem }: Opc
   return (req, res, next) => {
     const resultado = schema.safeParse(req[origem])
     if (resultado.success) {
-      res.locals.validado = { ...res.locals.validado, [origem]: resultado.data }
       next()
       return
     }
     const problema = resultado.error.issues[0]
-    const texto = mensagem ?? resolverMensagem(problema.message, problema.path)
+    const texto = mensagem ?? (problema && resolverMensagem(problema.message, problema.path))
+    if (texto === undefined) {
+      // Inalcancavel: um safeParse que falha sempre traz ao menos um problema.
+      // Se acontecer, vira o 500 da rota (o `falhas(...)` no fim da pilha).
+      throw new Error('Validacao falhou sem problemas')
+    }
     res.status(status).json({ [formato]: texto })
   }
 }
 
 /**
- * Le o valor parseado por um {@link validar} que ja rodou na rota, com o tipo
- * de saida do schema.
+ * Valor parseado da entrada de uma rota, com o tipo de saida do schema.
  *
- * @param res Resposta da requisicao (o `validar` guarda o valor em `res.locals`).
+ * Reaplica o schema que o {@link validar} da rota ja conferiu: o parse e puro
+ * (os `transform` nao tem efeito colateral), entao o resultado e o mesmo.
+ *
+ * @param req Requisicao.
  * @param origem Parte da requisicao validada.
- * @param _schema Schema usado pelo `validar` da rota (so para o tipo).
+ * @param schema O mesmo schema usado pelo `validar` da rota.
  * @returns O valor parseado.
- * @throws {Error} Se nenhum `validar` dessa origem rodou antes (erro de
- *   montagem da rota; vira o 500 da rota).
+ * @throws {ZodError} Se a entrada for invalida, o que so acontece se a rota
+ *   nao rodou o `validar` dessa origem antes (erro de montagem; vira o 500 da
+ *   rota).
  */
-export function validado<S extends ZodType>(res: Response, origem: Origem, _schema: S): z.output<S> {
-  const valores: Partial<Record<Origem, z.output<S>>> | undefined = res.locals.validado
-  const valor = valores?.[origem]
-  if (valor === undefined) {
-    throw new Error(`Entrada nao validada: ${origem}`)
-  }
-  return valor
+export function validado<S extends ZodType>(req: Request, origem: Origem, schema: S): z.output<S> {
+  return schema.parse(req[origem])
 }

@@ -15,6 +15,7 @@
  * sem essa decisao. Um tipo novo e uma entrada em `REGRAS`: passa a valer no
  * pedido e no resumo, mas nao no relatorio (`TIPOS_RELATORIO`).
  */
+import type { TipoConhecido } from '../tipos'
 import { arred2 } from './dinheiro'
 
 /** Regra de desconto de um tipo de cliente. */
@@ -58,11 +59,11 @@ const atacado: Regra = { taxa: 0.15, elegivel: (_subtotal, quantidade) => quanti
  * - `atacado`: 15% se a soma das quantidades for >= 10;
  * - outros tipos: sem desconto.
  */
-export const REGRAS: ReadonlyMap<string, Regra> = new Map([
+export const REGRAS: ReadonlyMap<string, Regra> = new Map<string, Regra>([
   ['comum', comum],
   ['vip', vip],
   ['atacado', atacado],
-])
+] satisfies [TipoConhecido, Regra][])
 
 /** Politica canonica (`POST /pedidos`): `REGRAS`, com 2 casas. */
 export const PEDIDO: Politica = { regras: REGRAS, arredondar: arred2 }
@@ -80,7 +81,7 @@ export const RESUMO: Politica = {
 }
 
 /** Tipos que o relatorio conhece; um tipo novo em `REGRAS` nao entra aqui sozinho. */
-export const TIPOS_RELATORIO: readonly string[] = ['vip', 'comum', 'atacado']
+export const TIPOS_RELATORIO: readonly string[] = ['vip', 'comum', 'atacado'] satisfies TipoConhecido[]
 
 /**
  * Politica do relatorio de vendas (`GET /relatorios/vendas`).
@@ -101,6 +102,10 @@ export const RELATORIO: Politica = {
  *
  * @param itens Itens do pedido; so `quantidade` e lida.
  * @returns A soma das quantidades.
+ * @todo Hoje so chegam numeros (o schema de `POST /pedidos` e o banco garantem
+ *   inteiros); o `string` vem do codigo JS legado. Estreitar para `number`
+ *   mudaria uma assercao de test/dominio/precos.test.ts, entao fica para uma
+ *   change que possa alterar testes.
  */
 export const quantidadeTotal = (itens: readonly { quantidade: number | string }[]): number => {
   let qtd = 0

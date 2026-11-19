@@ -3,7 +3,8 @@
  */
 import * as precos from '../domain/precos'
 import type { Repositorios } from '../repositories'
-import type { ItemPedido } from '../repositories/pedidos'
+import type { ItemPedido } from '../domain/tipos'
+import type { PedidoComTipo } from '../repositories/pedidos'
 
 /** Totais de um grupo do relatorio. */
 export interface TotaisVendas {
@@ -49,33 +50,31 @@ export function criarRelatorioService(r: Repositorios) {
      */
     async vendas(): Promise<RelatorioVendas> {
       const pedidos = await r.pedidos.listarAtivosComTipo()
-      const itensPorPedido: ItemPedido[][] = []
+      const comItens: { pedido: PedidoComTipo; itens: ItemPedido[] }[] = []
       for (const pedido of pedidos) {
-        itensPorPedido.push(await r.pedidos.itensDe(pedido.id))
+        comItens.push({ pedido, itens: await r.pedidos.itensDe(pedido.id) })
       }
-      if (pedidos.length === 0) {
+      if (comItens.length === 0) {
         return { geral: { pedidos: 0, itens: 0, faturamento: 0 } }
       }
 
       // Objeto simples (nao Map): a ordem das chaves na resposta e a de insercao.
       const porTipo: RelatorioVendas = {}
-      pedidos.forEach((pedido, indice) => {
-        const quantidade = itensPorPedido[indice].reduce((soma, item) => soma + item.quantidade, 0)
+      for (const { pedido, itens } of comItens) {
+        const quantidade = itens.reduce((soma, item) => soma + item.quantidade, 0)
         const desconto = precos.desconto(precos.RELATORIO, pedido.tipo, pedido.subtotal, quantidade)
-        if (!porTipo[pedido.tipo]) {
-          porTipo[pedido.tipo] = { pedidos: 0, itens: 0, faturamento: 0 }
-        }
-        porTipo[pedido.tipo].pedidos++
-        porTipo[pedido.tipo].itens += quantidade
-        porTipo[pedido.tipo].faturamento += pedido.subtotal - desconto + pedido.frete
-      })
+        const grupo = (porTipo[pedido.tipo] ??= { pedidos: 0, itens: 0, faturamento: 0 })
+        grupo.pedidos++
+        grupo.itens += quantidade
+        grupo.faturamento += pedido.subtotal - desconto + pedido.frete
+      }
 
       const geral: TotaisVendas = { pedidos: 0, itens: 0, faturamento: 0 }
-      for (const tipo in porTipo) {
-        porTipo[tipo].faturamento = precos.arred2(porTipo[tipo].faturamento)
-        geral.pedidos += porTipo[tipo].pedidos
-        geral.itens += porTipo[tipo].itens
-        geral.faturamento += porTipo[tipo].faturamento
+      for (const grupo of Object.values(porTipo)) {
+        grupo.faturamento = precos.arred2(grupo.faturamento)
+        geral.pedidos += grupo.pedidos
+        geral.itens += grupo.itens
+        geral.faturamento += grupo.faturamento
       }
       geral.faturamento = precos.arred2(geral.faturamento)
       porTipo.geral = geral

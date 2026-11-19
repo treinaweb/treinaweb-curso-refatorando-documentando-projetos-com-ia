@@ -15,8 +15,8 @@ import { buscaSchema } from '../schemas/busca'
  */
 export function criarProdutosController(produtos: Services['produtos']) {
   /** `GET /produtos?busca=` -> 200 `[{ id, nome, preco, estoque }]`. */
-  const listar: RequestHandler = async (_req, res) => {
-    const { busca } = validado(res, 'query', buscaSchema)
+  const listar: RequestHandler = async (req, res) => {
+    const { busca } = validado(req, 'query', buscaSchema)
     res.json(await produtos.listar(busca))
   }
 

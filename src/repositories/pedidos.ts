@@ -1,32 +1,13 @@
 /**
- * @file Repository de pedidos. Todo SQL parametrizado com `?`.
+ * @file Repository de pedidos. Todo SQL parametrizado com `?`, com os
+ * tipos dos parametros e da linha no generico do `prepare` (veja index.ts).
  *
  * `criar` e `cancelar` sao transacionais (`db.transaction`): ou tudo e
  * gravado, ou nada. As regras (estoque suficiente, status `criado`) e os
  * calculos de preco ficam em quem chama.
  */
 import type { Banco } from '../db'
-
-/** Linha de `pedidos`. */
-export interface Pedido {
-  id: number
-  cliente_id: number
-  subtotal: number
-  desconto: number
-  frete: number
-  total: number
-  status: string
-  criado_em: string
-}
-
-/** Linha de `itens_pedido`. */
-export interface ItemPedido {
-  id: number
-  pedido_id: number
-  produto_id: number
-  quantidade: number
-  preco_unitario: number
-}
+import type { ItemPedido, Pedido } from '../domain/tipos'
 
 /** Item como aparece em `GET /pedidos/:id`. */
 export interface ItemDetalhado {
@@ -66,15 +47,15 @@ export function criarPedidosRepo(db: Banco) {
   /** Grava o pedido, os itens e a baixa de estoque; devolve o id. */
   const gravarPedido = db.transaction((dados: NovoPedido): number => {
     const pedido = db
-      .prepare(
+      .prepare<[number, number, number, number, number, string]>(
         "INSERT INTO pedidos (cliente_id, subtotal, desconto, frete, total, status, criado_em) VALUES (?, ?, ?, ?, ?, 'criado', ?)",
       )
       .run(dados.cliente_id, dados.subtotal, dados.desconto, dados.frete, dados.total, dados.criado_em)
     const pedidoId = Number(pedido.lastInsertRowid)
-    const item = db.prepare(
+    const item = db.prepare<[number, number, number, number]>(
       'INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (?, ?, ?, ?)',
     )
-    const baixa = db.prepare('UPDATE produtos SET estoque = estoque - ? WHERE id = ?')
+    const baixa = db.prepare<[number, number]>('UPDATE produtos SET estoque = estoque - ? WHERE id = ?')
     for (const i of dados.itens) {
       item.run(pedidoId, i.produto_id, i.quantidade, i.preco_unitario)
       baixa.run(i.quantidade, i.produto_id)
@@ -84,9 +65,9 @@ export function criarPedidosRepo(db: Banco) {
 
   /** Muda o status para `cancelado` e devolve o estoque de cada item. */
   const gravarCancelamento = db.transaction((id: number): void => {
-    db.prepare("UPDATE pedidos SET status = 'cancelado' WHERE id = ?").run(id)
-    const itens = db.prepare('SELECT * FROM itens_pedido WHERE pedido_id = ?').all(id) as ItemPedido[]
-    const devolucao = db.prepare('UPDATE produtos SET estoque = estoque + ? WHERE id = ?')
+    db.prepare<[number]>("UPDATE pedidos SET status = 'cancelado' WHERE id = ?").run(id)
+    const itens = db.prepare<[number], ItemPedido>('SELECT * FROM itens_pedido WHERE pedido_id = ?').all(id)
+    const devolucao = db.prepare<[number, number]>('UPDATE produtos SET estoque = estoque + ? WHERE id = ?')
     for (const i of itens) devolucao.run(i.quantidade, i.produto_id)
   })
 
@@ -98,7 +79,7 @@ export function criarPedidosRepo(db: Banco) {
      * @returns O pedido, ou `undefined` se nao existir.
      */
     async buscar(id: number | string): Promise<Pedido | undefined> {
-      return db.prepare('SELECT * FROM pedidos WHERE id = ?').get(id) as Pedido | undefined
+      return db.prepare<[number | string], Pedido>('SELECT * FROM pedidos WHERE id = ?').get(id)
     },
 
     /**
@@ -109,10 +90,10 @@ export function criarPedidosRepo(db: Banco) {
      */
     async itensDoPedido(id: number): Promise<ItemDetalhado[]> {
       return db
-        .prepare(
+        .prepare<[number], ItemDetalhado>(
           'SELECT i.produto_id, p.nome, i.quantidade, i.preco_unitario FROM itens_pedido i JOIN produtos p ON p.id = i.produto_id WHERE i.pedido_id = ?',
         )
-        .all(id) as ItemDetalhado[]
+        .all(id)
     },
 
     /**
@@ -123,8 +104,10 @@ export function criarPedidosRepo(db: Banco) {
      */
     async buscarParaResumo(id: number | string): Promise<PedidoComCliente | undefined> {
       return db
-        .prepare('SELECT p.*, c.nome, c.tipo FROM pedidos p JOIN clientes c ON c.id = p.cliente_id WHERE p.id = ?')
-        .get(id) as PedidoComCliente | undefined
+        .prepare<[number | string], PedidoComCliente>(
+          'SELECT p.*, c.nome, c.tipo FROM pedidos p JOIN clientes c ON c.id = p.cliente_id WHERE p.id = ?',
+        )
+        .get(id)
     },
 
     /**
@@ -135,10 +118,10 @@ export function criarPedidosRepo(db: Banco) {
      */
     async itensParaResumo(id: number): Promise<ItemComNome[]> {
       return db
-        .prepare(
+        .prepare<[number], ItemComNome>(
           'SELECT i.*, pr.nome FROM itens_pedido i JOIN produtos pr ON pr.id = i.produto_id WHERE i.pedido_id = ?',
         )
-        .all(id) as ItemComNome[]
+        .all(id)
     },
 
     /**
@@ -148,8 +131,10 @@ export function criarPedidosRepo(db: Banco) {
      */
     async listarAtivosComTipo(): Promise<PedidoComTipo[]> {
       return db
-        .prepare("SELECT p.*, c.tipo FROM pedidos p, clientes c WHERE c.id = p.cliente_id AND p.status != 'cancelado'")
-        .all() as PedidoComTipo[]
+        .prepare<[], PedidoComTipo>(
+          "SELECT p.*, c.tipo FROM pedidos p, clientes c WHERE c.id = p.cliente_id AND p.status != 'cancelado'",
+        )
+        .all()
     },
 
     /**
@@ -159,7 +144,7 @@ export function criarPedidosRepo(db: Banco) {
      * @returns Os itens.
      */
     async itensDe(id: number): Promise<ItemPedido[]> {
-      return db.prepare('SELECT * FROM itens_pedido WHERE pedido_id = ?').all(id) as ItemPedido[]
+      return db.prepare<[number], ItemPedido>('SELECT * FROM itens_pedido WHERE pedido_id = ?').all(id)
     },
 
     /**

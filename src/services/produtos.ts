@@ -3,7 +3,7 @@
  */
 import { NaoEncontrado } from '../domain/erros'
 import type { Repositorios } from '../repositories'
-import type { Produto } from '../repositories/produtos'
+import type { Produto } from '../domain/tipos'
 
 /**
  * Cria o service de produtos.

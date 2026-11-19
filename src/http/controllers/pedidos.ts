@@ -41,8 +41,8 @@ export function criarPedidosController(pedidos: Services['pedidos']) {
   }
 
   /** `POST /pedidos` -> 201 `{ id, cliente_id, subtotal, desconto, frete, total, status: 'criado' }`. */
-  const criar: RequestHandler = async (_req, res) => {
-    res.status(201).json(await pedidos.criar(validado(res, 'body', criarPedidoSchema)))
+  const criar: RequestHandler = async (req, res) => {
+    res.status(201).json(await pedidos.criar(validado(req, 'body', criarPedidoSchema)))
   }
 
   /** `GET /pedidos/:id/resumo` -> 200 com o resumo apresentado. */

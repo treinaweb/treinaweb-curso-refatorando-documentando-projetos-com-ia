@@ -1,15 +1,9 @@
 /**
- * @file Repository de produtos. Todo SQL parametrizado com `?`.
+ * @file Repository de produtos. Todo SQL parametrizado com `?`, com os
+ * tipos dos parametros e da linha no generico do `prepare` (veja index.ts).
  */
 import type { Banco } from '../db'
-
-/** Linha de `produtos`. */
-export interface Produto {
-  id: number
-  nome: string
-  preco: number
-  estoque: number
-}
+import type { Produto } from '../domain/tipos'
 
 /**
  * Cria o repository de produtos sobre a conexao informada.
@@ -28,9 +22,9 @@ export function criarProdutosRepo(db: Banco) {
      */
     async listar(busca?: string): Promise<Produto[]> {
       if (busca) {
-        return db.prepare('SELECT * FROM produtos WHERE nome LIKE ?').all('%' + busca + '%') as Produto[]
+        return db.prepare<[string], Produto>('SELECT * FROM produtos WHERE nome LIKE ?').all('%' + busca + '%')
       }
-      return db.prepare('SELECT * FROM produtos').all() as Produto[]
+      return db.prepare<[], Produto>('SELECT * FROM produtos').all()
     },
 
     /**
@@ -40,7 +34,7 @@ export function criarProdutosRepo(db: Banco) {
      * @returns O produto, ou `undefined` se nao existir.
      */
     async buscar(id: number | string): Promise<Produto | undefined> {
-      return db.prepare('SELECT * FROM produtos WHERE id = ?').get(id) as Produto | undefined
+      return db.prepare<[number | string], Produto>('SELECT * FROM produtos WHERE id = ?').get(id)
     },
 
     /**
@@ -51,7 +45,7 @@ export function criarProdutosRepo(db: Banco) {
      */
     async buscarVarios(ids: number[]): Promise<Produto[]> {
       const marcadores = ids.map(() => '?').join(', ')
-      return db.prepare(`SELECT * FROM produtos WHERE id IN (${marcadores})`).all(...ids) as Produto[]
+      return db.prepare<number[], Produto>(`SELECT * FROM produtos WHERE id IN (${marcadores})`).all(...ids)
     },
   }
 }

@@ -1,7 +1,7 @@
 # Loja API — contexto para agentes
 
 API REST interna de pedidos de uma loja de informática/periféricos.
-Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories `async`), em TypeScript (o `strict` total e a remoção do `allowJs` são a etapa 7 da refatoração). Uso interno, **sem autenticação**.
+Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories `async`), em TypeScript estrito (`strict` + flags extras, sem `allowJs`). Uso interno, **sem autenticação**.
 
 ## Rodar e verificar
 
@@ -40,10 +40,10 @@ Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories 
 - Fluxo: `HTTP → route (validar + controller + falhas) → controller → service → domain / repositories`.
 - `src/http/routes/`: um router por recurso, `criarXRouter(services)`; cada rota é `validar(...)` (se houver
   entrada), o controller e, por último, `falhas({ padrao, ...fases })` com as mensagens 500 da rota.
-- `src/http/controllers/`: leem a entrada validada (`validado(res, origem, schema)`), chamam o service e respondem
+- `src/http/controllers/`: leem a entrada validada (`validado(req, origem, schema)`), chamam o service e respondem
   o sucesso. O *presenter* do resumo (`apresentarResumo`, linhas `R$ x.xx`) fica aqui.
-- `src/http/middlewares/`: `validar.ts` (aplica um schema, responde o primeiro problema no formato da rota e guarda o
-  valor parseado em `res.locals.validado[origem]`), `erros.ts` (`tratarErros(formato)` → `falhas(mensagens)`: erro
+- `src/http/middlewares/`: `validar.ts` (aplica um schema e responde o primeiro problema no formato da rota;
+  `validado(req, origem, schema)` reaplica o schema para entregar o valor parseado e tipado ao controller), `erros.ts` (`tratarErros(formato)` → `falhas(mensagens)`: erro
   de domínio → 404/400 com a mensagem do erro; `FalhaDoBanco(fase)` → 500 com a mensagem da fase; outro erro → 500
   com `padrao`) e `log.ts` (`<ISO> <METODO> <URL>`).
 - `src/http/schemas/`: schemas Zod da entrada (corpo, query e `:id`), com as mensagens de erro do projeto. A regra
@@ -51,7 +51,12 @@ Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories 
 - `src/services/`: casos de uso (`criarServices(r)`): `produtos`, `clientes`, `frete`, `pedidos` (criar, buscar,
   resumo, cancelar) e `relatorio`. Não conhecem HTTP. `erros.ts`: `FalhaDoBanco(fase, causa)`.
 - `src/repositories/`: `produtos`, `clientes` e `pedidos` (`criarRepositorios(db)`), o único lugar com SQL além do
-  schema. Métodos `async`; `pedidos.criar` e `pedidos.cancelar` são transacionais.
+  schema. Métodos `async`; `pedidos.criar` e `pedidos.cancelar` são transacionais. Cada consulta tipa parâmetros e
+  linha no genérico do `better-sqlite3` (`db.prepare<[parametros], Linha>(sql)`), sem `as`; quem garante a linha é o
+  schema de `src/db/`.
+- `src/domain/tipos.ts`: tipos de domínio (`Produto`, `Cliente`, `Pedido`, `ItemPedido`), com `tipo` e `status` como
+  `string` (o banco aceita qualquer texto); `TipoConhecido` só confere os literais de `REGRAS`/`TIPOS_RELATORIO`. Os
+  tipos de consulta (`PedidoComCliente`...) e de gravação (`NovoPedido`...) ficam nos repositories.
 - `src/domain/precos/`: domínio de preços, puro (sem I/O): `arred2` (2 casas, como `toFixed(2)`), `frete`, `subtotal`,
   `total` e o desconto. As regras de cada tipo são dados (`REGRAS`), e as políticas `PEDIDO` (canônica), `RESUMO`
   e `RELATORIO` combinam regras e arredondamento (`desconto(politica, tipo, subtotal, quantidade)`).
@@ -63,7 +68,9 @@ Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories 
 - `test/`: testes de caracterização em TypeScript (`*.test.ts`, um arquivo por área), `setup.ts` e `helpers.ts`;
   `test/dominio/`: testes unitários do domínio.
   Configuração em `vitest.config.mts`, `tsconfig.json` (editor e typecheck de `src/` + `test/`) e `tsconfig.build.json`
-  (build de `src/` para `dist/`; ainda com `allowJs`, removido na etapa 7, embora não reste `.js` em `src/`).
+  (build de `src/` para `dist/`). Os dois têm `strict` e os flags extras (`noUncheckedIndexedAccess`,
+  `exactOptionalPropertyTypes`, `noImplicitOverride`, `noUnusedLocals`/`Parameters`, `noImplicitReturns`,
+  `noFallthroughCasesInSwitch`); sem `allowJs`: só `.ts` em `src/`.
 
 ## Regras de negócio
 
@@ -106,6 +113,9 @@ grava o valor cobrado. Itens marcados *a confirmar* ainda não foram validados c
 - Domínio e mensagens em português (sem acentos nas mensagens de erro).
 - Código novo: em TypeScript (`const`, arrow functions, factories `criarX(...)` que devolvem objetos, sem classes
   além dos erros) e **SQL sempre parametrizado com `?`**.
+- **Sem `as` nem `any` em `src/`** (nem o `any` que vem de biblioteca usado como valor): tipe pelo genérico, pelo
+  schema (`z.output`) ou estreite um `unknown`. Enquanto o ESLint está adiado, confira com
+  `grep -rnE " as [A-Z(]|: any|as any" src`.
 - **Camadas:** route → controller → service. Rotas novas vão em `src/http/routes/` (`criarXRouter(services)`), com o
   controller em `src/http/controllers/` e o caso de uso em `src/services/`, registrado em `criarServices`. Não abra
   conexão fora de `src/server.ts` e dos testes.
@@ -122,7 +132,7 @@ grava o valor cobrado. Itens marcados *a confirmar* ainda não foram validados c
   Gravações com mais de um comando vão numa `db.transaction` dentro do repository (a função da transação do
   `better-sqlite3` é síncrona).
 - **Validação de entrada só por schema Zod** em `src/http/schemas/`, aplicada com `validar()` no router. O controller
-  usa a saída do parse (`validado(res, origem, schema)`), com os `transform` do schema (CEP normalizado, `subtotal`
+  usa a saída do parse (`validado(req, origem, schema)`, que reaplica o schema), com os `transform` do schema (CEP normalizado, `subtotal`
   numérico); ids do path continuam texto. Controllers e services não validam entrada à mão; os services ficam com as
   regras que dependem do banco. A resposta usa só o primeiro problema, com mensagem do projeto (nunca do
   Zod) no formato da rota. Ausente/`null` → "obrigatorio"; tipo ou formato errado → "invalido"; ids no path só com

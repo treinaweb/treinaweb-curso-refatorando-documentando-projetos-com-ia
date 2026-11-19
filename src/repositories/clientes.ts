@@ -1,16 +1,9 @@
 /**
- * @file Repository de clientes. Todo SQL parametrizado com `?`.
+ * @file Repository de clientes. Todo SQL parametrizado com `?`, com os
+ * tipos dos parametros e da linha no generico do `prepare` (veja index.ts).
  */
 import type { Banco } from '../db'
-
-/** Linha de `clientes`. */
-export interface Cliente {
-  id: number
-  nome: string
-  email: string
-  cep: string
-  tipo: string
-}
+import type { Cliente } from '../domain/tipos'
 
 /** Dados de um cliente novo (o tipo e sempre `comum`). */
 export interface NovoCliente {
@@ -36,7 +29,7 @@ export function criarClientesRepo(db: Banco) {
      * @returns Os clientes.
      */
     async listar(): Promise<Cliente[]> {
-      return db.prepare(`SELECT ${COLUNAS} FROM clientes ORDER BY id`).all() as Cliente[]
+      return db.prepare<[], Cliente>(`SELECT ${COLUNAS} FROM clientes ORDER BY id`).all()
     },
 
     /**
@@ -46,7 +39,7 @@ export function criarClientesRepo(db: Banco) {
      * @returns O cliente, ou `undefined` se nao existir.
      */
     async buscar(id: number | string): Promise<Cliente | undefined> {
-      return db.prepare(`SELECT ${COLUNAS} FROM clientes WHERE id = ?`).get(id) as Cliente | undefined
+      return db.prepare<[number | string], Cliente>(`SELECT ${COLUNAS} FROM clientes WHERE id = ?`).get(id)
     },
 
     /**
@@ -56,7 +49,7 @@ export function criarClientesRepo(db: Banco) {
      * @returns O cliente, ou `undefined` se nao existir.
      */
     async buscarCompleto(id: number): Promise<Cliente | undefined> {
-      return db.prepare('SELECT * FROM clientes WHERE id = ?').get(id) as Cliente | undefined
+      return db.prepare<[number], Cliente>('SELECT * FROM clientes WHERE id = ?').get(id)
     },
 
     /**
@@ -67,7 +60,7 @@ export function criarClientesRepo(db: Banco) {
      */
     async criar({ nome, email, cep }: NovoCliente): Promise<number> {
       const resultado = db
-        .prepare('INSERT INTO clientes (nome, email, cep, tipo) VALUES (?, ?, ?, ?)')
+        .prepare<[string, string, string, string]>('INSERT INTO clientes (nome, email, cep, tipo) VALUES (?, ?, ?, ?)')
         .run(nome, email, cep, 'comum')
       return Number(resultado.lastInsertRowid)
     },
