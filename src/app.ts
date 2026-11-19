@@ -4,12 +4,14 @@
  * `createApp({ db })` e o unico jeito de montar o app: o banco e injetado por
  * quem chama (src/server.ts em producao, test/helpers.ts nos testes), e nenhum
  * modulo abre conexao sozinho. Os repositories (src/repositories/, o unico
- * lugar com SQL) sao criados aqui e injetados nas factories dos routers. Nao
- * escuta em porta (veja src/server.ts).
+ * lugar com SQL) sao criados aqui e injetados nas factories dos routers, assim
+ * como o dominio de precos (src/domain/precos/, o unico lugar com regras de
+ * preco). Nao escuta em porta (veja src/server.ts).
  */
 import express, { type NextFunction, type Request, type Response } from 'express'
 import type { Banco } from './db'
 import { criarRepositorios } from './repositories'
+import * as precos from './domain/precos'
 import createClientesRouter = require('./routes/clientes')
 import createLegadoRouter = require('./routes/legado')
 import createPedidosRouter = require('./routes/pedidos')
@@ -36,8 +38,9 @@ export interface AppDeps {
  * `/pedidos`. As rotas e respostas estao documentadas nos routers e no README.
  *
  * Os validadores de entrada (src/http/) sao montados aqui e injetados nas
- * factories junto com o `db`: um id no path que nao e so digitos responde o
- * 404 da propria rota.
+ * factories junto com os repositories: um id no path que nao e so digitos
+ * responde o 404 da propria rota. As factories que calculam preco (legado e
+ * pedidos) recebem tambem o dominio de precos, como terceiro argumento.
  *
  * @param deps Dependencias do app (veja {@link AppDeps}).
  * @returns O app Express, pronto para `listen` ou para o supertest.
@@ -64,8 +67,8 @@ export function createApp({ db }: AppDeps): express.Express {
   const busca = validar({ schema: buscaSchema, origem: 'query', formato: 'erro' })
 
   const r = criarRepositorios(db)
-  app.use(createLegadoRouter(r, { busca, idProduto, idPedido, frete }))
+  app.use(createLegadoRouter(r, { busca, idProduto, idPedido, frete }, precos))
   app.use('/clientes', createClientesRouter(r, { idCliente, criarCliente }))
-  app.use('/pedidos', createPedidosRouter(r, { idPedido, criarPedido }))
+  app.use('/pedidos', createPedidosRouter(r, { idPedido, criarPedido }, precos))
   return app
 }

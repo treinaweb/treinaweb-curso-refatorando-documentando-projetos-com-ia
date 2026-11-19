@@ -13,13 +13,15 @@ Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories 
 - **Testes:** `npm test` (Vitest + supertest), `npm run typecheck` (`tsc --noEmit` do editor e do build; o Vitest não checa tipos) e
   `npm run test:coverage`. Exigem Node >= 24.11 (o `.nvmrc` atende). Rode `npm test` antes e depois de qualquer mudança.
   - São **testes de caracterização**: registram o comportamento HTTP atual (status, corpo inteiro, efeitos no estoque
-    e nos valores gravados). Testam só pelo HTTP. Os `*.test.ts` importam só de `./helpers`; não importe `utils`, `descontos`
-    nem `db` neles. Só `test/helpers.ts` e `test/setup.ts` montam o app (`createApp` + `abrirBanco`): cada arquivo roda
+    e nos valores gravados). Testam só pelo HTTP. Os `test/*.test.ts` importam só de `./helpers`; não importe `utils`,
+    `domain` nem `db` neles. Só `test/helpers.ts` e `test/setup.ts` montam o app (`createApp` + `abrirBanco`): cada arquivo roda
     num processo com banco temporário próprio; o `loja.db` não é tocado. Para falhas do banco, `appComBanco(sql)` monta
     um app sobre um banco temporário quebrado de propósito (`DROP TABLE`, trigger com `RAISE(ABORT, ...)`).
   - Testes com nome iniciado por `[atual]` registram bugs ou divergências conhecidos, como são hoje. Corrigir um deles
     é mudança de comportamento: faça numa change própria, alterando o teste junto. Liste-os com `grep -rn "\[atual\]" test`.
   - Lacunas que o HTTP não alcança ficam como `it.todo`.
+  - **Testes de domínio** (`test/dominio/*.test.ts`): unitários das funções puras de `src/domain/`, e importam só de lá.
+    Complementam os de caracterização, não os substituem.
 - Para verificar à mão sem sujar o banco local, use um banco descartável: `DB_PATH=/tmp/loja-teste.db PORTA=3999 npm start`.
 - O README é a referência da API para quem a consome (rotas, payloads, respostas, erros, exemplos).
   Em caso de dúvida, a fonte da verdade das rotas continua sendo `src/app.ts` + `src/routes/`.
@@ -29,26 +31,30 @@ Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories 
 - `src/server.ts`: entrypoint (lê `PORTA`/`DB_PATH`, abre o banco, `listen`).
 - `src/app.ts`: `createApp({ db })`, middlewares (`express.json()`, log), repositories, validadores e montagem dos
   routers. O `db` é sempre injetado: nenhum módulo abre conexão sozinho; os routers são factories
-  `createXRouter(repositorios, validadores)`.
+  `createXRouter(repositorios, validadores)`, e as que calculam preço (legado e pedidos) recebem também o domínio
+  de preços como terceiro argumento.
 - `src/repositories/`: `produtos`, `clientes` e `pedidos` (`criarRepositorios(db)`), o único lugar com SQL além do
   schema. Métodos `async`; `pedidos.criar` e `pedidos.cancelar` são transacionais.
 - `src/http/schemas/`: schemas Zod da entrada (corpo, query e `:id`), com as mensagens de erro do projeto.
   `src/http/middlewares/validar.ts`: aplica um schema e responde o primeiro problema no formato da rota.
 - `src/routes/legado.js`: rotas de produtos, `/frete`, `/pedidos/:id/resumo`, `/relatorios/vendas`, `/pedidos/:id/cancelar`.
 - `src/routes/clientes.js`, `src/routes/pedidos.js`: rotas já migradas para router por recurso.
-- `src/descontos.js`: desconto por tipo de cliente (`desconto_<tipo>`, despacho dinâmico).
-- `src/utils.js`: `validaCep` (regra única de CEP, também usada pelos schemas) e `calcula_frete`.
+- `src/domain/precos/`: domínio de preços, puro (sem I/O): `arred2` (2 casas, como `toFixed(2)`), `frete`, `subtotal`,
+  `total` e o desconto. As regras de cada tipo são dados (`REGRAS`), e as políticas `PEDIDO` (canônica), `RESUMO`
+  e `RELATORIO` combinam regras e arredondamento (`desconto(politica, tipo, subtotal, quantidade)`).
+- `src/utils.js`: `validaCep` (regra única de CEP, também usada pelos schemas).
 - `src/db/index.ts`: `abrirBanco(arquivo)`: conexão (`better-sqlite3`), schema e seed (só em banco novo).
 - `docs/openapi.yaml`: contrato OpenAPI 3.0.3 das rotas (escrito à mão, estático; não é servido pela API).
 - `docs/refatoracao.md`: roteiro da refatoração (etapas, ordem, decisões tomadas e em aberto, registro de andamento).
-- `test/`: testes de caracterização em TypeScript (`*.test.ts`, um arquivo por área), `setup.ts` e `helpers.ts`.
+- `test/`: testes de caracterização em TypeScript (`*.test.ts`, um arquivo por área), `setup.ts` e `helpers.ts`;
+  `test/dominio/`: testes unitários do domínio.
   Configuração em `vitest.config.mts`, `tsconfig.json` (editor e typecheck de `src/` + `test/`) e `tsconfig.build.json`
   (build de `src/` para `dist/`, `allowJs`: o código legado é JS e os módulos novos nascem em `.ts`).
 
 ## Regras de negócio
 
-A fonte canônica é a criação de pedido (`POST /pedidos`, em `src/routes/pedidos.js`): é ela que grava
-o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o negócio; **pergunte antes de alterá-los**.
+A fonte canônica é a criação de pedido (`POST /pedidos`, com a política `PEDIDO` de `src/domain/precos/`): é ela que
+grava o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o negócio; **pergunte antes de alterá-los**.
 
 - **Preço:** `total = subtotal - desconto + frete`. O preço do produto é copiado para
   `itens_pedido.preco_unitario` na criação; pedidos antigos não mudam se o preço mudar.
@@ -68,9 +74,10 @@ o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o n
 
 ## Armadilhas
 
-- **Regras de preço duplicadas.** O desconto é recalculado em `POST /pedidos`, `GET /pedidos/:id/resumo`
-  e `GET /relatorios/vendas` (em vez de ler `pedidos.desconto`); o frete existe em `src/routes/pedidos.js`
-  e em `utils.calcula_frete`. As cópias já divergiram. Ao mudar uma regra, alinhe todas ou pergunte.
+- **Políticas de preço divergentes.** O desconto é recalculado em `GET /pedidos/:id/resumo` e
+  `GET /relatorios/vendas` (em vez de ler `pedidos.desconto`), com políticas próprias em `src/domain/precos/descontos.ts`:
+  `RESUMO` (`comum` só com `> 500`) e `RELATORIO` (`Math.round` e só os tipos de `TIPOS_RELATORIO`). Para mudar uma
+  regra, mude `REGRAS` (vale para as três); não unifique nem "conserte" uma política sem decisão do negócio.
 - **`await` de repository fora de `try`**: os handlers são `async`, e no Express 5 uma rejeição sem `catch` vira a página
   HTML de 500 do Express, em vez do JSON da rota (spec `falhas-do-banco`).
 - Formato de erro inconsistente: `{erro}` no código legado, `{error}` em `src/routes/clientes.js`.
@@ -85,6 +92,9 @@ o valor cobrado. Itens marcados *a confirmar* ainda não foram validados com o n
   **SQL sempre parametrizado com `?`**.
 - Rotas novas vão em `src/routes/`, como factory que recebe os repositories; não abra conexão fora de `src/server.ts`
   e dos testes.
+- **Regra de preço só em `src/domain/precos/`** (funções puras, sem I/O nem Express), injetada nas factories pelo
+  `createApp`. Handlers não calculam desconto, frete nem arredondam valores à mão (o texto `R$ x.xx`
+  das linhas do resumo é apresentação); uma divergência é uma política com nome.
 - **SQL só em `src/repositories/`** (e o schema em `src/db/`), sempre com `?`. Handlers não acessam o banco: chamam os
   repositories injetados, e todo `await` de repository fica num `try` que responde a mensagem 500 da rota.
   Gravações com mais de um comando vão numa `db.transaction` dentro do repository (a função da transação do

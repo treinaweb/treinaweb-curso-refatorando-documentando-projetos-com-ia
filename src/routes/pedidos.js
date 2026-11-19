@@ -8,10 +8,10 @@
  */
 
 var express = require('express')
-var descontos = require('../descontos')
 
 /**
- * Cria o router de pedidos sobre os repositories informados.
+ * Cria o router de pedidos sobre os repositories e o dominio de precos
+ * informados.
  *
  * Os handlers sao `async`; toda chamada a repository fica num `try` que
  * responde a mensagem 500 da operacao (sem ele, o Express 5 responderia 500
@@ -23,9 +23,11 @@ var descontos = require('../descontos')
  * @param {import('express').RequestHandler} v.idPedido `:id` de pedido (404 `Pedido nao encontrado`).
  * @param {import('express').RequestHandler} v.criarPedido Corpo de `POST /pedidos`
  *   (src/http/schemas/pedido.ts; 400 com a mensagem do primeiro problema).
+ * @param {typeof import('../domain/precos')} precos Dominio de precos
+ *   (src/domain/precos/): desconto, frete, subtotal e total.
  * @returns {import('express').Router} Router com `GET /:id` e `POST /`.
  */
-function createPedidosRouter(r, v) {
+function createPedidosRouter(r, v, precos) {
   var router = express.Router()
 
   /**
@@ -71,14 +73,14 @@ function createPedidosRouter(r, v) {
    * pelo `v.criarPedido` (src/http/schemas/pedido.ts): ids e `quantidade` sao
    * inteiros positivos, ha ao menos um item e campos extras sao ignorados.
    *
-   * Calculo:
+   * Calculo (regras em src/domain/precos/):
    * - `preco_unitario` = preco atual do produto (copiado para `itens_pedido`);
-   * - `subtotal` = soma de `preco_unitario * quantidade` (2 casas);
-   * - desconto: `comum` 5% se subtotal >= 500; outros tipos via
-   *   `descontos.desconto_<tipo>(subtotal, itens)`; sem funcao, 0;
-   * - frete sobre o subtotal ANTES do desconto, pelo CEP do cadastro do cliente
-   *   (subtotal >= 300 gratis; senao 1o digito 0-3 R$ 15, 4-7 R$ 30, 8-9 R$ 20);
-   * - `total` = subtotal - desconto + frete.
+   * - `subtotal` = soma de `preco_unitario * quantidade` (2 casas), `precos.subtotal`;
+   * - desconto pela politica canonica, `precos.PEDIDO`, conforme o tipo do
+   *   cliente; tipo sem regra, 0;
+   * - frete sobre o subtotal ANTES do desconto, pelo CEP do cadastro do
+   *   cliente (`precos.frete`);
+   * - `total` = subtotal - desconto + frete (2 casas), `precos.total`.
    *
    * Efeitos: insere o pedido com status `criado`, insere os itens e baixa o
    * estoque de cada produto, numa transacao (`r.pedidos.criar`): se qualquer
@@ -94,10 +96,6 @@ function createPedidosRouter(r, v) {
    * - 500: `Erro interno` (leitura do cliente ou dos produtos),
    *   `Erro ao salvar pedido` (gravacao)
    * (todas no formato `{ erro: '...' }`)
-   *
-   * @todo Diverge de utils.calcula_frete: a regra de frete abaixo e uma copia
-   *   inline da funcao de utils.js. Hoje produzem o mesmo resultado; ao mudar
-   *   uma, alinhe a outra (esta e a que vale para o valor cobrado).
    */
   router.post('/', v.criarPedido, async function(req, res) {
     var inicio = Date.now()
@@ -123,7 +121,6 @@ function createPedidosRouter(r, v) {
     for (var j = 0; j < produtos.length; j++) {
       tmp2[produtos[j].id] = produtos[j]
     }
-    var subtotal = 0
     for (var k = 0; k < itens.length; k++) {
       var p = tmp2[itens[k].produto_id]
       if (!p) {
@@ -133,35 +130,13 @@ function createPedidosRouter(r, v) {
         return res.status(400).json({erro: 'Estoque insuficiente para ' + p.nome})
       }
       itens[k].preco_unitario = p.preco
-      subtotal = subtotal + p.preco * itens[k].quantidade
-    }
-    subtotal = Number(subtotal.toFixed(2))
-
-    var desconto = 0
-    if (cliente.tipo == 'comum') {
-      if (subtotal >= 500) {
-        desconto = Number((subtotal * 0.05).toFixed(2))
-      }
-    } else {
-      var fn = descontos['desconto_' + cliente.tipo]
-      if (fn) {
-        desconto = fn(subtotal, itens)
-      }
     }
 
+    var subtotal = precos.subtotal(itens)
+    var desconto = precos.desconto(precos.PEDIDO, cliente.tipo, subtotal, precos.quantidadeTotal(itens))
     // nao mexer: frete gratis olha o subtotal, combinado com o comercial
-    var frete = 0
-    if (subtotal < 300) {
-      var faixa = parseInt(cliente.cep.substring(0, 1))
-      if (faixa <= 3) {
-        frete = 15
-      } else if (faixa <= 7) {
-        frete = 30
-      } else {
-        frete = 20
-      }
-    }
-    var total = Number((subtotal - desconto + frete).toFixed(2))
+    var frete = precos.frete(cliente.cep, subtotal)
+    var total = precos.total(subtotal, desconto, frete)
     var agora = new Date().toISOString()
 
     var pedido_id

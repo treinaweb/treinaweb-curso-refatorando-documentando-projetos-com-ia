@@ -338,10 +338,23 @@ recomendação estão listadas.
   - a precisão (`toFixed(2)`) centralizada num helper de dinheiro, reproduzindo exatamente os
     arredondamentos atuais.
 - **Fora de escopo:** **corrigir** as divergências (veja "Fora da refatoração").
-- **Decisões tomadas:** as divergências continuam, só que com nome e documentadas no código
-  (`@todo Diverge de ...`).
-- **Decisões em aberto:** acrescentar testes unitários do domínio, além dos de HTTP. Recomendação:
-  sim, porque as funções puras são baratas de testar e documentam as regras.
+- **Decisões tomadas:**
+  - as divergências continuam, só que com nome e documentadas no código (`@todo Diverge de ...`);
+  - **domínio em TypeScript, injetado:** `src/domain/precos/` é criado no `createApp` e passado às
+    factories (`createPedidosRouter(r, v, precos)`, `createLegadoRouter(r, v, precos)`), pelo mesmo
+    motivo dos validadores e repositories (o JS legado não importa `.ts` sob o Vitest);
+  - **regras como dados, políticas como combinação:** `REGRAS` é um `Map` de tipo → `{ taxa, elegivel }`
+    (o `Map` evita que `constructor` ou `toString` achem algo no protótipo). As políticas `PEDIDO`
+    (canônica), `RESUMO` (sobrescreve o `comum` para `> 500`) e `RELATORIO` (filtra por
+    `TIPOS_RELATORIO` e arredonda com `Math.round`) combinam regras e arredondamento. Corrigir uma
+    divergência é apagar a sobrescrita;
+  - `arred2` é exatamente `Number(x.toFixed(2))` (difere de `Math.round(x * 100) / 100`, por exemplo
+    em `0.015`); a soma do faturamento do relatório e o texto `R$ x.xx` das linhas do resumo ficam nas
+    rotas até a etapa 6;
+  - **testes unitários do domínio** em `test/dominio/`, que importam só de `src/domain/`;
+  - `src/descontos.js`, `utils.calcula_frete` e `utils.formata_moeda` saem (a remoção de
+    `formata_moeda`, prevista na etapa 8, foi antecipada).
+- **Decisões em aberto:** nenhuma.
 - **Riscos:**
   - Mudar a ordem das operações de ponto flutuante muda centavos (por exemplo, `46.945.toFixed(2)`)
     → os testes comparam os valores exatos; reproduzir a mesma sequência de cálculo.
@@ -404,8 +417,10 @@ recomendação estão listadas.
 - **Change sugerida:** `refactor-cleanup`
 - **Depende de:** etapa 7.
 - **Objetivo:** deixar o projeto coerente com a arquitetura nova.
-- **Escopo:** remover o código morto (`formata_moeda`, o comentário do `DELETE`, se ele não for mais
-  necessário como aviso); revisar dependências e scripts; `AGENTS.md` (Mapa, Armadilhas e Convenções)
+- **Escopo:** remover o código morto (o comentário do `DELETE`, se ele não for mais necessário como
+  aviso; o `formata_moeda` já saiu na etapa 5); atualizar o texto dos testes que ainda citam
+  `descontos.js` (o nome de um teste em `resumo.test.ts` e um comentário em `relatorio.test.ts`; só
+  texto, sem mudar o que testam); revisar dependências e scripts; `AGENTS.md` (Mapa, Armadilhas e Convenções)
   refletindo a arquitetura nova; o README com os comandos atuais; este roteiro marcado como concluído.
 - **Fora de escopo:** mudança de comportamento.
 - **Decisões tomadas:** nenhuma.
@@ -424,11 +439,12 @@ Cada uma vira uma change própria, quando o negócio decidir, em qualquer moment
 (que as deixa explícitas):
 
 - **Estoque negativo** com o mesmo produto em dois itens do pedido (`pedidos.test.ts`).
-- **Resumo do `comum` com `> 500`**, enquanto a cobrança usa `>= 500` (`resumo.test.ts`).
+- **Resumo do `comum` com `> 500`**, enquanto a cobrança usa `>= 500` (`resumo.test.ts`; política
+  `RESUMO`).
 - **Relatório com `Math.round`** no desconto, faturamento diferente da soma de `pedidos.total`
-  (`relatorio.test.ts`).
-- **Regra antiga do VIP** ("só acima de R$ 200", num comentário em `descontos.js`): hoje são 10% sobre
-  qualquer valor.
+  (`relatorio.test.ts`; política `RELATORIO`).
+- **Regra antiga do VIP** ("só acima de R$ 200", registrada no `@todo` da regra `vip` em
+  `src/domain/precos/descontos.ts`): hoje são 10% sobre qualquer valor.
 - **Unificação do formato de erro** (`{erro}` x `{error}`): muda o contrato, então precisa de change
   própria.
 
@@ -460,7 +476,7 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | 3. Validação com Zod e correções explícitas | `validation-and-explicit-fixes` | concluída (`2026-11-18-validation-and-explicit-fixes`) |
 | 2. Express 5 | `upgrade-express-5` | concluída (`2026-11-18-upgrade-express-5`) |
 | 4. Camada de dados | `data-layer-repositories` | concluída (`2026-11-18-data-layer-repositories`) |
-| 5. Domínio de preços | `pricing-domain` | pendente |
+| 5. Domínio de preços | `pricing-domain` | concluída (`2026-11-18-pricing-domain`) |
 | 6. Camada HTTP e services | `http-layer-services` | pendente |
 | 7. TypeScript estrito | `typescript-strict` | pendente |
 | 8. Limpeza final | `refactor-cleanup` | pendente |
