@@ -1,7 +1,7 @@
 # Loja API — contexto para agentes
 
 API REST interna de pedidos de uma loja de informática/periféricos.
-Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories `async`), em transição de JS para TypeScript. Uso interno, **sem autenticação**.
+Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories `async`), em TypeScript (o `strict` total e a remoção do `allowJs` são a etapa 7 da refatoração). Uso interno, **sem autenticação**.
 
 ## Rodar e verificar
 
@@ -13,7 +13,7 @@ Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories 
 - **Testes:** `npm test` (Vitest + supertest), `npm run typecheck` (`tsc --noEmit` do editor e do build; o Vitest não checa tipos) e
   `npm run test:coverage`. Exigem Node >= 24.11 (o `.nvmrc` atende). Rode `npm test` antes e depois de qualquer mudança.
   - São **testes de caracterização**: registram o comportamento HTTP atual (status, corpo inteiro, efeitos no estoque
-    e nos valores gravados). Testam só pelo HTTP. Os `test/*.test.ts` importam só de `./helpers`; não importe `utils`,
+    e nos valores gravados). Testam só pelo HTTP. Os `test/*.test.ts` importam só de `./helpers`; não importe `services`,
     `domain` nem `db` neles. Só `test/helpers.ts` e `test/setup.ts` montam o app (`createApp` + `abrirBanco`): cada arquivo roda
     num processo com banco temporário próprio; o `loja.db` não é tocado. Para falhas do banco, `appComBanco(sql)` monta
     um app sobre um banco temporário quebrado de propósito (`DROP TABLE`, trigger com `RAISE(ABORT, ...)`).
@@ -24,32 +24,41 @@ Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories 
     Complementam os de caracterização, não os substituem.
 - Para verificar à mão sem sujar o banco local, use um banco descartável: `DB_PATH=/tmp/loja-teste.db PORTA=3999 npm start`.
 - O README é a referência da API para quem a consome (rotas, payloads, respostas, erros, exemplos).
-  Em caso de dúvida, a fonte da verdade das rotas continua sendo `src/app.ts` + `src/routes/`.
+  Em caso de dúvida, a fonte da verdade das rotas continua sendo `src/app.ts` + `src/http/routes/`.
 
 ## Mapa
 
 - `src/server.ts`: entrypoint (lê `PORTA`/`DB_PATH`, abre o banco, `listen`).
-- `src/app.ts`: `createApp({ db })`, middlewares (`express.json()`, log), repositories, validadores e montagem dos
-  routers. O `db` é sempre injetado: nenhum módulo abre conexão sozinho; os routers são factories
-  `createXRouter(repositorios, validadores)`, e as que calculam preço (legado e pedidos) recebem também o domínio
-  de preços como terceiro argumento.
+- `src/app.ts`: `createApp({ db })`: `express.json()`, log e a cadeia `criarRepositorios(db)` → `criarServices(r)` →
+  routers (`/produtos`, `/frete`, `/clientes`, `/pedidos`, `/relatorios`). O `db` é sempre injetado: nenhum módulo
+  abre conexão sozinho. Só os repositories são injetados; domínio e schemas são importados direto.
+- Fluxo: `HTTP → route (validar + controller + falhas) → controller → service → domain / repositories`.
+- `src/http/routes/`: um router por recurso, `criarXRouter(services)`; cada rota é `validar(...)` (se houver
+  entrada), o controller e, por último, `falhas({ padrao, ...fases })` com as mensagens 500 da rota.
+- `src/http/controllers/`: leem a entrada validada (`validado(res, origem, schema)`), chamam o service e respondem
+  o sucesso. O *presenter* do resumo (`apresentarResumo`, linhas `R$ x.xx`) fica aqui.
+- `src/http/middlewares/`: `validar.ts` (aplica um schema, responde o primeiro problema no formato da rota e guarda o
+  valor parseado em `res.locals.validado[origem]`), `erros.ts` (`tratarErros(formato)` → `falhas(mensagens)`: erro
+  de domínio → 404/400 com a mensagem do erro; `FalhaDoBanco(fase)` → 500 com a mensagem da fase; outro erro → 500
+  com `padrao`) e `log.ts` (`<ISO> <METODO> <URL>`).
+- `src/http/schemas/`: schemas Zod da entrada (corpo, query e `:id`), com as mensagens de erro do projeto. A regra
+  única de CEP está em `cep.ts` (saída sem espaços e sem hífen); o `subtotal` do `/frete` sai como número.
+- `src/services/`: casos de uso (`criarServices(r)`): `produtos`, `clientes`, `frete`, `pedidos` (criar, buscar,
+  resumo, cancelar) e `relatorio`. Não conhecem HTTP. `erros.ts`: `FalhaDoBanco(fase, causa)`.
 - `src/repositories/`: `produtos`, `clientes` e `pedidos` (`criarRepositorios(db)`), o único lugar com SQL além do
   schema. Métodos `async`; `pedidos.criar` e `pedidos.cancelar` são transacionais.
-- `src/http/schemas/`: schemas Zod da entrada (corpo, query e `:id`), com as mensagens de erro do projeto.
-  `src/http/middlewares/validar.ts`: aplica um schema e responde o primeiro problema no formato da rota.
-- `src/routes/legado.js`: rotas de produtos, `/frete`, `/pedidos/:id/resumo`, `/relatorios/vendas`, `/pedidos/:id/cancelar`.
-- `src/routes/clientes.js`, `src/routes/pedidos.js`: rotas já migradas para router por recurso.
 - `src/domain/precos/`: domínio de preços, puro (sem I/O): `arred2` (2 casas, como `toFixed(2)`), `frete`, `subtotal`,
   `total` e o desconto. As regras de cada tipo são dados (`REGRAS`), e as políticas `PEDIDO` (canônica), `RESUMO`
   e `RELATORIO` combinam regras e arredondamento (`desconto(politica, tipo, subtotal, quantidade)`).
-- `src/utils.js`: `validaCep` (regra única de CEP, também usada pelos schemas).
+- `src/domain/pedido.ts`: ciclo de vida (`StatusPedido`, `podeCancelar`). `src/domain/erros.ts`: `NaoEncontrado`,
+  `EstoqueInsuficiente`, `TransicaoInvalida` (só a mensagem; o status fica no tratador HTTP).
 - `src/db/index.ts`: `abrirBanco(arquivo)`: conexão (`better-sqlite3`), schema e seed (só em banco novo).
 - `docs/openapi.yaml`: contrato OpenAPI 3.0.3 das rotas (escrito à mão, estático; não é servido pela API).
 - `docs/refatoracao.md`: roteiro da refatoração (etapas, ordem, decisões tomadas e em aberto, registro de andamento).
 - `test/`: testes de caracterização em TypeScript (`*.test.ts`, um arquivo por área), `setup.ts` e `helpers.ts`;
   `test/dominio/`: testes unitários do domínio.
   Configuração em `vitest.config.mts`, `tsconfig.json` (editor e typecheck de `src/` + `test/`) e `tsconfig.build.json`
-  (build de `src/` para `dist/`, `allowJs`: o código legado é JS e os módulos novos nascem em `.ts`).
+  (build de `src/` para `dist/`; ainda com `allowJs`, removido na etapa 7, embora não reste `.js` em `src/`).
 
 ## Regras de negócio
 
@@ -78,9 +87,11 @@ grava o valor cobrado. Itens marcados *a confirmar* ainda não foram validados c
   `GET /relatorios/vendas` (em vez de ler `pedidos.desconto`), com políticas próprias em `src/domain/precos/descontos.ts`:
   `RESUMO` (`comum` só com `> 500`) e `RELATORIO` (`Math.round` e só os tipos de `TIPOS_RELATORIO`). Para mudar uma
   regra, mude `REGRAS` (vale para as três); não unifique nem "conserte" uma política sem decisão do negócio.
-- **`await` de repository fora de `try`**: os handlers são `async`, e no Express 5 uma rejeição sem `catch` vira a página
-  HTML de 500 do Express, em vez do JSON da rota (spec `falhas-do-banco`).
-- Formato de erro inconsistente: `{erro}` no código legado, `{error}` em `src/routes/clientes.js`.
+- **Rota sem `falhas(...)` no fim**: no Express 5, a rejeição do controller vai para o próximo tratador de erro; sem o
+  `falhas(...)` da rota, vira a página HTML de 500 do Express, em vez do JSON da rota (spec `falhas-do-banco`).
+  Não há tratador no nível do app de propósito: o JSON malformado continua com o 400 em HTML do Express (há teste).
+- Formato de erro inconsistente: `{erro}` em todas as rotas, menos `/clientes`, que usa `{error}`. Cada router
+  escolhe o seu com `tratarErros('erro' | 'error')` e o mesmo formato nos `validar(...)`.
 - **Query parser fixado em `extended`** em `src/app.ts` (`app.set('query parser', 'extended')`). O padrão do
   Express 5 (`simple`) não entende colchetes e faria `?busca[x]=` listar todos os produtos em vez de
   `400 Busca invalida`. Não remova sem uma change de contrato.
@@ -88,20 +99,27 @@ grava o valor cobrado. Itens marcados *a confirmar* ainda não foram validados c
 ## Convenções
 
 - Domínio e mensagens em português (sem acentos nas mensagens de erro).
-- Código novo: em TypeScript, no estilo de `src/routes/clientes.js` (`const`, arrow functions, `express.Router`) e
-  **SQL sempre parametrizado com `?`**.
-- Rotas novas vão em `src/routes/`, como factory que recebe os repositories; não abra conexão fora de `src/server.ts`
-  e dos testes.
-- **Regra de preço só em `src/domain/precos/`** (funções puras, sem I/O nem Express), injetada nas factories pelo
-  `createApp`. Handlers não calculam desconto, frete nem arredondam valores à mão (o texto `R$ x.xx`
-  das linhas do resumo é apresentação); uma divergência é uma política com nome.
-- **SQL só em `src/repositories/`** (e o schema em `src/db/`), sempre com `?`. Handlers não acessam o banco: chamam os
-  repositories injetados, e todo `await` de repository fica num `try` que responde a mensagem 500 da rota.
+- Código novo: em TypeScript (`const`, arrow functions, factories `criarX(...)` que devolvem objetos, sem classes
+  além dos erros) e **SQL sempre parametrizado com `?`**.
+- **Camadas:** route → controller → service. Rotas novas vão em `src/http/routes/` (`criarXRouter(services)`), com o
+  controller em `src/http/controllers/` e o caso de uso em `src/services/`, registrado em `criarServices`. Não abra
+  conexão fora de `src/server.ts` e dos testes.
+  - **Controller só chama service**: sem `try`, sem cálculo, sem repository; lê a entrada com `validado(...)` e
+    responde o sucesso. Toda rota termina com `falhas({ padrao: '<mensagem 500>' })`.
+  - **Service lança erros tipados** (`src/domain/erros.ts`) para 404/400 e deixa a falha do banco seguir crua (vira
+    `padrao`). Só quando a rota tem mais de uma mensagem 500, o service envolve a fase com
+    `throw new FalhaDoBanco('<fase>', erro)`, e a rota mapeia a fase (`falhas({ padrao, itens: '...' })`).
+- **Regra de preço só em `src/domain/precos/`** (funções puras, sem I/O nem Express), importada pelos services.
+  Controllers e services não calculam desconto nem frete e não arredondam à mão (o texto `R$ x.xx` das linhas do
+  resumo é apresentação, no controller); uma divergência é uma política com nome. Regras de ciclo de vida ficam em
+  `src/domain/pedido.ts`.
+- **SQL só em `src/repositories/`** (e o schema em `src/db/`), sempre com `?`. Só os services chamam os repositories.
   Gravações com mais de um comando vão numa `db.transaction` dentro do repository (a função da transação do
   `better-sqlite3` é síncrona).
-- **Validação de entrada só por schema Zod** em `src/http/schemas/`, aplicada com `validar()` e **injetada nas factories**
-  pelo `createApp` (o JS legado não consegue importar `.ts` sob o Vitest). Handlers não validam entrada à mão; ficam
-  com as regras que dependem do banco. A resposta usa só o primeiro problema, com mensagem do projeto (nunca do
+- **Validação de entrada só por schema Zod** em `src/http/schemas/`, aplicada com `validar()` no router. O controller
+  usa a saída do parse (`validado(res, origem, schema)`), com os `transform` do schema (CEP normalizado, `subtotal`
+  numérico); ids do path continuam texto. Controllers e services não validam entrada à mão; os services ficam com as
+  regras que dependem do banco. A resposta usa só o primeiro problema, com mensagem do projeto (nunca do
   Zod) no formato da rota. Ausente/`null` → "obrigatorio"; tipo ou formato errado → "invalido"; ids no path só com
   dígitos, senão o 404 da rota. Campos extras são ignorados. No Zod 4, `z.unknown().refine()` torna a chave
   obrigatória: envolva com `z.optional`.

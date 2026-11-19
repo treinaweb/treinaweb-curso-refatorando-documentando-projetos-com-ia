@@ -24,6 +24,14 @@ describe('POST /pedidos: validacoes', () => {
     expect(res.body).toEqual({ erro: 'cliente_id obrigatorio' })
   })
 
+  // O erro do express.json() acontece antes das rotas e cai no tratador padrao
+  // do Express: 400 em HTML, nao no formato `{ erro }` das rotas.
+  it('corpo JSON malformado devolve 400 em HTML do Express', async () => {
+    const res = await api().post('/pedidos').set('Content-Type', 'application/json').send('{"cliente_id":')
+    expect(res.status).toBe(400)
+    expect(res.headers['content-type']).toMatch(/^text\/html/)
+  })
+
   it('sem cliente_id devolve 400', async () => {
     const res = await api().post('/pedidos').send({ itens: [{ produto_id: 1, quantidade: 1 }] })
     expect(res.status).toBe(400)

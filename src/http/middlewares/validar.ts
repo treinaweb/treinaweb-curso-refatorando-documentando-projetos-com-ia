@@ -3,11 +3,13 @@
  *
  * Os schemas ficam em src/http/schemas/ e definem as mensagens do projeto no
  * `error` de cada campo; este middleware nunca devolve mensagens do Zod.
- * Os validadores sao montados em src/app.ts e injetados nas factories dos
- * routers (o JS legado nao consegue importar `.ts` sob o Vitest).
+ * O valor parseado (com os `transform` dos schemas, como o CEP sem hifen) fica
+ * em `res.locals.validado[origem]` e e lido pelos controllers com
+ * {@link validado}; `req` nao e alterado (no Express 5, `req.query` nem pode
+ * ser reatribuido).
  */
-import type { RequestHandler } from 'express'
-import type { ZodType } from 'zod'
+import type { RequestHandler, Response } from 'express'
+import type { z, ZodType } from 'zod'
 
 /** Parte da requisicao validada. */
 export type Origem = 'body' | 'query' | 'params'
@@ -52,8 +54,8 @@ export function resolverMensagem(mensagem: string, caminho: readonly PropertyKey
 /**
  * Cria o middleware que valida `req[origem]` com o schema.
  *
- * - Valido: chama `next()` sem alterar a requisicao (o handler continua
- *   lendo `req.body`/`req.query`/`req.params` como chegaram).
+ * - Valido: guarda o valor parseado em `res.locals.validado[origem]` e chama
+ *   `next()`, sem alterar a requisicao.
  * - Invalido: responde `status` (padrao 400) com `{ [formato]: mensagem }`,
  *   usando so o primeiro problema encontrado.
  *
@@ -64,6 +66,7 @@ export function validar({ schema, origem, formato, status = 400, mensagem }: Opc
   return (req, res, next) => {
     const resultado = schema.safeParse(req[origem])
     if (resultado.success) {
+      res.locals.validado = { ...res.locals.validado, [origem]: resultado.data }
       next()
       return
     }
@@ -71,4 +74,24 @@ export function validar({ schema, origem, formato, status = 400, mensagem }: Opc
     const texto = mensagem ?? resolverMensagem(problema.message, problema.path)
     res.status(status).json({ [formato]: texto })
   }
+}
+
+/**
+ * Le o valor parseado por um {@link validar} que ja rodou na rota, com o tipo
+ * de saida do schema.
+ *
+ * @param res Resposta da requisicao (o `validar` guarda o valor em `res.locals`).
+ * @param origem Parte da requisicao validada.
+ * @param _schema Schema usado pelo `validar` da rota (so para o tipo).
+ * @returns O valor parseado.
+ * @throws {Error} Se nenhum `validar` dessa origem rodou antes (erro de
+ *   montagem da rota; vira o 500 da rota).
+ */
+export function validado<S extends ZodType>(res: Response, origem: Origem, _schema: S): z.output<S> {
+  const valores: Partial<Record<Origem, z.output<S>>> | undefined = res.locals.validado
+  const valor = valores?.[origem]
+  if (valor === undefined) {
+    throw new Error(`Entrada nao validada: ${origem}`)
+  }
+  return valor
 }

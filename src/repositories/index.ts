@@ -1,13 +1,13 @@
 /**
  * @file Repositories da Loja API: o unico lugar (alem do schema em src/db/)
- * com SQL. Montados pelo `createApp` e injetados nas factories dos routers.
+ * com SQL. Montados pelo `createApp` e entregues aos services (src/services/).
  */
 import type { Banco } from '../db'
 import { criarClientesRepo } from './clientes'
 import { criarPedidosRepo } from './pedidos'
 import { criarProdutosRepo } from './produtos'
 
-/** Repositories injetados nas factories dos routers. */
+/** Repositories entregues aos services. */
 export type Repositorios = ReturnType<typeof criarRepositorios>
 
 /**

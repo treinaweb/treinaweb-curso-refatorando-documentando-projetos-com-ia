@@ -2,8 +2,7 @@
  * @file Dominio de precos: o unico lugar com as regras de desconto, frete,
  * subtotal, total e precisao em reais. Puro (sem I/O nem Express).
  *
- * O `createApp` (src/app.ts) injeta este modulo inteiro nas factories dos
- * routers como `precos` (o JS legado nao importa `.ts` sob o Vitest).
+ * Importado direto pelos services (`import * as precos`).
  */
 export * from './dinheiro'
 export * from './descontos'

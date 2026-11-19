@@ -14,7 +14,7 @@
  * - `Quantidade invalida no item N` (qualquer valor que nao seja inteiro > 0).
  *
  * Campos extras sao ignorados. Clientes e produtos inexistentes, estoque e
- * calculo ficam no handler (src/routes/pedidos.js).
+ * calculo ficam no service (src/services/pedidos.ts).
  */
 import { z } from 'zod'
 import { inteiroPositivo, objetoOuVazio } from './comum'

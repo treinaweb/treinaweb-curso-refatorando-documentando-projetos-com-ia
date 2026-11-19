@@ -1,5 +1,5 @@
 # Contrato OpenAPI da Loja API.
-# Escrito a mao a partir de src/app.ts + src/routes/ (fonte da verdade das rotas).
+# Escrito a mao a partir de src/app.ts + src/http/routes/ (fonte da verdade das rotas).
 # Ao mudar uma rota ou regra, atualize este arquivo junto com README e JSDoc.
 # Exemplos capturados de uma API com banco recem-criado (dados de exemplo).
 # Mensagens de erro aparecem exatamente como a API responde (sem acentos).
@@ -804,7 +804,7 @@ components:
 
     Erro:
       type: object
-      description: Formato de erro do código legado (produtos, pedidos, frete, relatórios).
+      description: Formato de erro de produtos, pedidos, frete e relatórios (todas as rotas, menos clientes).
       required: [erro]
       properties:
         erro:

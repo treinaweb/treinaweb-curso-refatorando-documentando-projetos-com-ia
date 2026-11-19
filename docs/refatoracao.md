@@ -323,9 +323,9 @@ recomendação estão listadas.
   testes; `npm audit` sem as vulnerabilidades do `sqlite3` 5.
   Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
-## Etapa 5: Domínio de preços
+## Etapa 5: Domínio de preços (concluída)
 
-- **Change sugerida:** `pricing-domain`
+- **Change sugerida:** `pricing-domain` (arquivada em `2026-11-18-pricing-domain`)
 - **Depende de:** etapa 4.
 - **Objetivo:** concentrar as regras de preço (desconto e frete) num módulo de domínio puro, sem
   I/O, e deixar as divergências **explícitas** em vez de escondidas em cópias.
@@ -363,36 +363,64 @@ recomendação estão listadas.
   `npm test` sem mudança nos testes.
   Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
-## Etapa 6: Camada HTTP e services
+## Etapa 6: Camada HTTP e services (concluída)
 
-- **Change sugerida:** `http-layer-services`. Pode ser dividida em `http-layer-catalogo` (produtos,
-  clientes, frete) e `http-layer-pedidos` (pedidos, resumo, cancelamento, relatório).
+- **Change sugerida:** `http-layer-services`. A divisão em `http-layer-catalogo` e `http-layer-pedidos` foi
+  considerada e descartada (veja as decisões).
 - **Depende de:** etapa 5.
 - **Objetivo:** separar as responsabilidades em routes → controllers → services, com `async/await`
   de ponta a ponta.
 - **Escopo:**
-  - services por caso de uso (`criarPedido`, `cancelarPedido`, `resumoPedido`, `relatorioVendas`,
-    ...);
-  - controllers finos: validação (schemas da etapa 3), chamada do service, resposta;
-  - middleware de erro centralizado, preservando os formatos `{erro}` e `{error}` por rota e as
-    mensagens atuais;
-  - erros de domínio tipados (por exemplo, `NaoEncontrado`, `EstoqueInsuficiente`) convertidos em
-    status no middleware;
+  - services por caso de uso em `src/services/` (`produtos`, `clientes`, `frete`, `pedidos` com criar, buscar,
+    resumo e cancelar, `relatorio`);
+  - controllers finos em `src/http/controllers/` e routers por recurso em `src/http/routes/`;
+  - tratamento de erro centralizado, preservando os formatos `{erro}` e `{error}` por rota e as mensagens atuais;
+  - erros de domínio tipados (`NaoEncontrado`, `EstoqueInsuficiente`, `TransicaoInvalida`) convertidos em
+    status no tratador;
   - o log de requisição como middleware próprio;
-  - a remoção de `app.js` e `routes/` legados.
-- **Fora de escopo:** unificar o formato de erro, autenticação, rotas novas.
-- **Decisões tomadas:** `async/await` em tudo; o Express 5 repassa as rejeições ao middleware de erro,
-  sem wrappers.
-- **Decisões em aberto:** dividir a etapa em duas. Recomendação: dividir, se a change passar de
-  algumas centenas de linhas.
+  - a remoção de `src/routes/` e de `src/utils.js`.
+- **Fora de escopo:** unificar o formato de erro, autenticação, rotas novas, mudar consultas (o N+1 dos itens no
+  relatório continua).
+- **Decisões tomadas:**
+  - `async/await` em tudo; o Express 5 repassa as rejeições ao tratador de erro, sem wrappers.
+  - **Uma change só** (decisão do usuário), com as tasks convertendo um recurso por vez e os testes passando a
+    cada passo.
+  - **Mensagem 500 por fase:** cada rota termina com `falhas({ padrao, ...fases })`, criado por
+    `tratarErros('erro' | 'error')` no router. O tratador fica **na pilha da rota** (não no router nem no app),
+    então cada rota declara as próprias mensagens sem metadado na requisição. O service só envolve a falha
+    quando a rota tem duas mensagens: `FalhaDoBanco('itens')` em `GET /pedidos/:id` e
+    `FalhaDoBanco('gravacao')` em `POST /pedidos`; nas demais, o erro cru vira `padrao`. Descartados: o
+    controller rotular cada chamada (o `try` de volta com outro nome) e quebrar o caso de uso por fase.
+  - **Sem tratador no nível do app:** o JSON malformado continua no 400 em HTML do Express. Um teste de
+    caracterização novo (`pedidos.test.ts`) registra isso; foi escrito antes de qualquer mudança.
+  - **O domínio não conhece HTTP:** os erros carregam só a mensagem; o status fica no tratador.
+  - **Saída do parse** (revê a decisão da etapa 3 de que o `validar` "não altera a requisição"): o `req`
+    continua intacto, mas o `validar` guarda o valor parseado em `res.locals.validado[origem]` (no Express 5,
+    `req.query` não pode ser reatribuído), e o controller o lê com `validado(res, origem, schema)`, tipado pelo
+    schema. O CEP sai normalizado (`transform`) e o `subtotal` do `/frete` sai como número; a regra do CEP
+    passou para `src/http/schemas/cep.ts` e o `utils.js` saiu. Ids do path continuam texto: um `Number` faria
+    um id gigante perder precisão.
+  - **Service para tudo**, inclusive as leituras sem regra e o `/frete`: o controller só chama service.
+  - **Injeção:** só os repositories (dependem do `db`); domínio e schemas são importados direto, porque o
+    motivo da injeção (o JS legado não importa `.ts` sob o Vitest) deixou de existir.
+  - **Ciclo de vida** em `src/domain/pedido.ts` (`podeCancelar`), com teste de domínio.
+  - **Resumo:** o service devolve os dados; o texto `R$ x.xx` das linhas é um *presenter* no controller. A
+    agregação e a soma do faturamento do relatório foram para o `relatorio.vendas`, na mesma sequência.
+  - **Log `pedido <id> (<tipo>) em <n>ms`** no `pedidos.criar` (o tipo do cliente não está na resposta).
+  - **`DELETE /pedidos/:id`:** o código comentado saiu; o aviso "pedidos são cancelados, nunca excluídos; não
+    reative" continua como comentário no router de pedidos e no `AGENTS.md`.
+- **Decisões em aberto:** nenhuma.
+- **Observações:**
+  - Única diferença observável, num caminho sem teste e fora do contrato: um erro inesperado (bug de
+    programação) num service, que antes virava a página HTML 500 do Express, agora vira o JSON 500 da rota.
+    No `/frete`, que não usa o banco e não tinha mensagem 500, o `padrao` é `Erro interno`.
+  - Nenhum teste existente mudou; entraram o do JSON malformado e os de `podeCancelar`.
 - **Riscos:**
-  - É a maior etapa → divisão por recurso.
-  - O formato de erro (`{error}` só em clientes) se perder na centralização → o middleware recebe o
-    formato da rota; os testes comparam o corpo inteiro.
-- **Pronto quando:** os `try/catch` por rota foram trocados pelo middleware de erro centralizado (os
-  callbacks de banco e os contadores de callback já saíram na etapa 4); os handlers legados de
-  `src/routes/` foram removidos; `npm test` sem mudança nos testes (inclusive os de falha do banco da
-  etapa 4).
+  - Rota sem `falhas(...)` volta a responder 500 em HTML → convenção no `AGENTS.md`; os testes de falha do
+    banco cobrem a mensagem de cada rota.
+- **Pronto quando:** os `try/catch` por rota foram trocados pelo tratador de erro centralizado (só restam os dois
+  `try` que marcam fase em `src/services/pedidos.ts`); `src/routes/` e `src/utils.js` foram removidos; `npm test`
+  sem mudança nos testes existentes (inclusive os de falha do banco da etapa 4).
   Smoke do `dist/`: `npm start` num banco descartável e as rotas principais respondendo como antes.
 
 ## Etapa 7: TypeScript estrito
@@ -417,8 +445,8 @@ recomendação estão listadas.
 - **Change sugerida:** `refactor-cleanup`
 - **Depende de:** etapa 7.
 - **Objetivo:** deixar o projeto coerente com a arquitetura nova.
-- **Escopo:** remover o código morto (o comentário do `DELETE`, se ele não for mais necessário como
-  aviso; o `formata_moeda` já saiu na etapa 5); atualizar o texto dos testes que ainda citam
+- **Escopo:** remover o código morto (o bloco comentado do `DELETE` saiu na etapa 6, e o aviso ficou como
+  comentário no router de pedidos; o `formata_moeda` já saiu na etapa 5); atualizar o texto dos testes que ainda citam
   `descontos.js` (o nome de um teste em `resumo.test.ts` e um comentário em `relatorio.test.ts`; só
   texto, sem mudar o que testam); revisar dependências e scripts; `AGENTS.md` (Mapa, Armadilhas e Convenções)
   refletindo a arquitetura nova; o README com os comandos atuais; este roteiro marcado como concluído.
@@ -477,6 +505,6 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | 2. Express 5 | `upgrade-express-5` | concluída (`2026-11-18-upgrade-express-5`) |
 | 4. Camada de dados | `data-layer-repositories` | concluída (`2026-11-18-data-layer-repositories`) |
 | 5. Domínio de preços | `pricing-domain` | concluída (`2026-11-18-pricing-domain`) |
-| 6. Camada HTTP e services | `http-layer-services` | pendente |
+| 6. Camada HTTP e services | `http-layer-services` | concluída (change `http-layer-services`, a arquivar) |
 | 7. TypeScript estrito | `typescript-strict` | pendente |
 | 8. Limpeza final | `refactor-cleanup` | pendente |
