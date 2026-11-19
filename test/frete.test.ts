@@ -53,7 +53,9 @@ describe('GET /frete', () => {
 
   it('CEP ausente ou invalido devolve 400', async () => {
     for (const query of [{}, { cep: '' }, { cep: '123' }, { cep: 'abcdefgh' }]) {
-      const res = await api().get('/frete').query({ ...query, subtotal: '100' })
+      const res = await api()
+        .get('/frete')
+        .query({ ...query, subtotal: '100' })
       expect(res.status).toBe(400)
       expect(res.body).toEqual({ erro: 'CEP invalido' })
     }

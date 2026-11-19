@@ -62,7 +62,6 @@ describe('GET /relatorios/vendas', () => {
     // soma de pedidos.total dos 4 pedidos ativos: 475 + 80 + 95.73 + 262.90 = 913.63
     expect(res.body.geral.faturamento).not.toBe(913.63)
   })
-
 })
 
 describe('GET /relatorios/vendas: falhas do banco', () => {

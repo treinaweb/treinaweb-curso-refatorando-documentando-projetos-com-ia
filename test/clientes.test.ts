@@ -35,9 +35,7 @@ describe('GET /clientes/:id', () => {
 
 describe('POST /clientes', () => {
   it('cadastra com CEP com hifen, grava sem hifen e sempre como comum', async () => {
-    const res = await api()
-      .post('/clientes')
-      .send({ nome: 'Ana Teste', email: 'ana@example.com', cep: '04538-133' })
+    const res = await api().post('/clientes').send({ nome: 'Ana Teste', email: 'ana@example.com', cep: '04538-133' })
     expect(res.status).toBe(201)
     expect(res.body).toEqual({
       id: expect.any(Number),

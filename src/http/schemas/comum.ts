@@ -24,10 +24,7 @@ export const ausente = (valor: unknown): boolean => valor === undefined || valor
  * @returns O schema com o pre-processamento.
  */
 export const objetoOuVazio = <T extends z.ZodType>(schema: T) =>
-  z.preprocess(
-    (valor) => (typeof valor === 'object' && valor !== null && !Array.isArray(valor) ? valor : {}),
-    schema,
-  )
+  z.preprocess((valor) => (typeof valor === 'object' && valor !== null && !Array.isArray(valor) ? valor : {}), schema)
 
 /**
  * Inteiro positivo vindo do corpo (JSON), sem coercao: texto, booleano,

@@ -36,7 +36,13 @@ export function criarProdutosRouter(services: Services): express.Router {
   const controller = criarProdutosController(services.produtos)
   const falhas = tratarErros('erro')
   const busca = validar({ schema: buscaSchema, origem: 'query', formato: 'erro' })
-  const idProduto = validar({ schema: idSchema, origem: 'params', formato: 'erro', status: 404, mensagem: 'Produto nao encontrado' })
+  const idProduto = validar({
+    schema: idSchema,
+    origem: 'params',
+    formato: 'erro',
+    status: 404,
+    mensagem: 'Produto nao encontrado',
+  })
 
   router.get('/', busca, controller.listar, falhas({ padrao: 'Erro ao buscar produtos' }))
   router.get('/:id', idProduto, controller.buscar, falhas({ padrao: 'Erro ao buscar produto' }))

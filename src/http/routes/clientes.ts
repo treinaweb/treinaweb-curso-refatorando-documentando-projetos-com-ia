@@ -39,7 +39,13 @@ export function criarClientesRouter(services: Services): express.Router {
   const router = express.Router()
   const controller = criarClientesController(services.clientes)
   const falhas = tratarErros('error')
-  const idCliente = validar({ schema: idSchema, origem: 'params', formato: 'error', status: 404, mensagem: 'Cliente nao encontrado' })
+  const idCliente = validar({
+    schema: idSchema,
+    origem: 'params',
+    formato: 'error',
+    status: 404,
+    mensagem: 'Cliente nao encontrado',
+  })
   const corpo = validar({ schema: criarClienteSchema, origem: 'body', formato: 'error' })
 
   router.get('/', controller.listar, falhas({ padrao: 'Erro ao listar clientes' }))

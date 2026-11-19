@@ -33,7 +33,9 @@ describe('POST /pedidos: validacoes', () => {
   })
 
   it('sem cliente_id devolve 400', async () => {
-    const res = await api().post('/pedidos').send({ itens: [{ produto_id: 1, quantidade: 1 }] })
+    const res = await api()
+      .post('/pedidos')
+      .send({ itens: [{ produto_id: 1, quantidade: 1 }] })
     expect(res.status).toBe(400)
     expect(res.body).toEqual({ erro: 'cliente_id obrigatorio' })
   })
@@ -370,25 +372,30 @@ describe('POST /pedidos e GET /pedidos/:id: falhas do banco', () => {
 
   it('POST /pedidos devolve 500 Erro interno quando a leitura do cliente falha', async () => {
     const api = await appComBanco('DROP TABLE clientes')
-    const res = await api().post('/pedidos').send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 1 }] })
+    const res = await api()
+      .post('/pedidos')
+      .send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 1 }] })
     expect(res.status).toBe(500)
     expect(res.body).toEqual({ erro: 'Erro interno' })
   })
 
   it('POST /pedidos devolve 500 Erro interno quando a leitura dos produtos falha', async () => {
     const api = await appComBanco('DROP TABLE produtos')
-    const res = await api().post('/pedidos').send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 1 }] })
+    const res = await api()
+      .post('/pedidos')
+      .send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 1 }] })
     expect(res.status).toBe(500)
     expect(res.body).toEqual({ erro: 'Erro interno' })
   })
 
   it('POST /pedidos devolve 500 Erro ao salvar pedido quando a gravacao do pedido falha', async () => {
     const api = await appComBanco('DROP TABLE pedidos')
-    const res = await api().post('/pedidos').send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 1 }] })
+    const res = await api()
+      .post('/pedidos')
+      .send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 1 }] })
     expect(res.status).toBe(500)
     expect(res.body).toEqual({ erro: 'Erro ao salvar pedido' })
   })
-
 })
 
 /** Trigger que faz falhar qualquer comando do tipo informado na tabela. */
@@ -401,7 +408,9 @@ describe('POST /pedidos: gravacao atomica', () => {
   it('falha ao gravar um item devolve 500 Erro ao salvar pedido e nao grava nada', async () => {
     const api = await appComBanco(falhaEm('INSERT', 'itens_pedido'))
     const antes = (await api().get('/produtos/1')).body.estoque
-    const res = await api().post('/pedidos').send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 2 }] })
+    const res = await api()
+      .post('/pedidos')
+      .send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 2 }] })
     expect(res.status).toBe(500)
     expect(res.body).toEqual({ erro: 'Erro ao salvar pedido' })
     expect((await api().get('/pedidos/1')).status).toBe(404)
@@ -414,7 +423,13 @@ describe('POST /pedidos: gravacao atomica', () => {
     const teclado = (await api().get('/produtos/2')).body.estoque
     const res = await api()
       .post('/pedidos')
-      .send({ cliente_id: 1, itens: [{ produto_id: 1, quantidade: 1 }, { produto_id: 2, quantidade: 1 }] })
+      .send({
+        cliente_id: 1,
+        itens: [
+          { produto_id: 1, quantidade: 1 },
+          { produto_id: 2, quantidade: 1 },
+        ],
+      })
     expect(res.status).toBe(500)
     expect(res.body).toEqual({ erro: 'Erro ao salvar pedido' })
     expect((await api().get('/pedidos/1')).status).toBe(404)

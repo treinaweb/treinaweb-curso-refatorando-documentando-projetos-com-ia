@@ -90,7 +90,8 @@ describe('POST /pedidos/:id/cancelar: falhas do banco', () => {
 
   it('devolve 500 Erro ao cancelar pedido quando a mudanca de status falha', async () => {
     const api = await appComBanco(
-      PEDIDO_GRAVADO + " CREATE TRIGGER falha BEFORE UPDATE ON pedidos BEGIN SELECT RAISE(ABORT, 'falha simulada'); END;",
+      PEDIDO_GRAVADO +
+        " CREATE TRIGGER falha BEFORE UPDATE ON pedidos BEGIN SELECT RAISE(ABORT, 'falha simulada'); END;",
     )
     const res = await api().post('/pedidos/1/cancelar')
     expect(res.status).toBe(500)
@@ -99,7 +100,8 @@ describe('POST /pedidos/:id/cancelar: falhas do banco', () => {
 })
 
 /** Item do pedido 1 (2 unidades do produto 1), gravado direto no banco. */
-const ITEM_GRAVADO = 'INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (1, 1, 2, 50);'
+const ITEM_GRAVADO =
+  'INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (1, 1, 2, 50);'
 
 // O cancelamento e atomico (antes, as devolucoes de estoque ignoravam o erro e
 // respondiam 200, e uma falha na leitura dos itens derrubava o processo).

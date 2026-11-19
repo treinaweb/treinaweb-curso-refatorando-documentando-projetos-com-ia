@@ -64,10 +64,21 @@ export function criarPedidosRouter(services: Services): express.Router {
   const router = express.Router()
   const controller = criarPedidosController(services.pedidos)
   const falhas = tratarErros('erro')
-  const idPedido = validar({ schema: idSchema, origem: 'params', formato: 'erro', status: 404, mensagem: 'Pedido nao encontrado' })
+  const idPedido = validar({
+    schema: idSchema,
+    origem: 'params',
+    formato: 'erro',
+    status: 404,
+    mensagem: 'Pedido nao encontrado',
+  })
   const corpo = validar({ schema: criarPedidoSchema, origem: 'body', formato: 'erro' })
 
-  router.get('/:id', idPedido, controller.buscar, falhas({ padrao: 'Erro ao buscar pedido', itens: 'Erro ao buscar itens' }))
+  router.get(
+    '/:id',
+    idPedido,
+    controller.buscar,
+    falhas({ padrao: 'Erro ao buscar pedido', itens: 'Erro ao buscar itens' }),
+  )
   router.post('/', corpo, controller.criar, falhas({ padrao: 'Erro interno', gravacao: 'Erro ao salvar pedido' }))
   router.get('/:id/resumo', idPedido, controller.resumo, falhas({ padrao: 'Erro ao gerar resumo' }))
   router.post('/:id/cancelar', idPedido, controller.cancelar, falhas({ padrao: 'Erro ao cancelar pedido' }))

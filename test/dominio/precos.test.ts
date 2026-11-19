@@ -128,9 +128,19 @@ describe('dinheiro e pedido', () => {
 
   it('subtotal soma preco_unitario * quantidade na ordem e arredonda so no fim', () => {
     expect(subtotal([])).toBe(0)
-    expect(subtotal([{ preco_unitario: 89.9, quantidade: 2 }, { preco_unitario: 120, quantidade: 1 }])).toBe(299.8)
+    expect(
+      subtotal([
+        { preco_unitario: 89.9, quantidade: 2 },
+        { preco_unitario: 120, quantidade: 1 },
+      ]),
+    ).toBe(299.8)
     // 0.1 + 0.2 sem arredondar seria 0.30000000000000004
-    expect(subtotal([{ preco_unitario: 0.1, quantidade: 1 }, { preco_unitario: 0.2, quantidade: 1 }])).toBe(0.3)
+    expect(
+      subtotal([
+        { preco_unitario: 0.1, quantidade: 1 },
+        { preco_unitario: 0.2, quantidade: 1 },
+      ]),
+    ).toBe(0.3)
     // tres itens de 0.005: a soma (0.015) arredonda para 0.01; arredondar cada item daria 0.03
     const itens = [0.005, 0.005, 0.005].map((preco) => ({ preco_unitario: preco, quantidade: 1 }))
     expect(subtotal(itens)).toBe(0.01)

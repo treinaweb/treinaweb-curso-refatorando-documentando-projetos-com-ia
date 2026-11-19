@@ -71,7 +71,9 @@ export function criarPedidosRepo(db: Banco) {
       )
       .run(dados.cliente_id, dados.subtotal, dados.desconto, dados.frete, dados.total, dados.criado_em)
     const pedidoId = Number(pedido.lastInsertRowid)
-    const item = db.prepare('INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (?, ?, ?, ?)')
+    const item = db.prepare(
+      'INSERT INTO itens_pedido (pedido_id, produto_id, quantidade, preco_unitario) VALUES (?, ?, ?, ?)',
+    )
     const baixa = db.prepare('UPDATE produtos SET estoque = estoque - ? WHERE id = ?')
     for (const i of dados.itens) {
       item.run(pedidoId, i.produto_id, i.quantidade, i.preco_unitario)
@@ -133,7 +135,9 @@ export function criarPedidosRepo(db: Banco) {
      */
     async itensParaResumo(id: number): Promise<ItemComNome[]> {
       return db
-        .prepare('SELECT i.*, pr.nome FROM itens_pedido i JOIN produtos pr ON pr.id = i.produto_id WHERE i.pedido_id = ?')
+        .prepare(
+          'SELECT i.*, pr.nome FROM itens_pedido i JOIN produtos pr ON pr.id = i.produto_id WHERE i.pedido_id = ?',
+        )
         .all(id) as ItemComNome[]
     },
 

@@ -97,7 +97,8 @@ export function criarPedidosService(r: Repositorios) {
       const comPreco = itens.map((item) => {
         const produto = porId.get(item.produto_id)
         if (!produto) throw new NaoEncontrado('Produto ' + item.produto_id + ' nao encontrado')
-        if (produto.estoque < item.quantidade) throw new EstoqueInsuficiente('Estoque insuficiente para ' + produto.nome)
+        if (produto.estoque < item.quantidade)
+          throw new EstoqueInsuficiente('Estoque insuficiente para ' + produto.nome)
         return { produto_id: item.produto_id, quantidade: item.quantidade, preco_unitario: produto.preco }
       })
 
