@@ -429,7 +429,7 @@ recomendação estão listadas.
 
 ## Etapa 7: TypeScript estrito (concluída)
 
-- **Change sugerida:** `typescript-strict`
+- **Change sugerida:** `typescript-strict` (arquivada em `2026-11-19-typescript-strict`)
 - **Depende de:** etapa 6.
 - **Objetivo:** concluir a migração e fechar as portas que o `strict` deixa abertas.
 - **Escopo:** o que sobrou depois das etapas 4 a 6, que já tinham tirado todo `.js` de `src/`, ligado o
@@ -471,7 +471,7 @@ recomendação estão listadas.
     chamar o TS 7 pelo caminho nos scripts (com `npx tsc` e o editor no TS 6) e adiar, o usuário escolheu
     adiar. **Retomar** quando o `typescript-eslint` suportar o TS 7 estável; o plano (configuração *flat*,
     `strictTypeChecked`, `as` proibido em `src/`, `no-unsafe-*` desligado em `test/`) está no design da
-    change `typescript-strict`. Até lá, "sem `as`/`any`" é conferido por `grep`.
+    change `2026-11-19-typescript-strict`. Até lá, "sem `as`/`any`" é conferido por `grep`.
 - **Decisões em aberto:** nenhuma (o ESLint adiado tem condição de retomada).
 - **Riscos:** sem lint, um `as` ou `any` pode voltar → convenção no `AGENTS.md` com o `grep` de
   conferência.
@@ -546,5 +546,5 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | 4. Camada de dados | `data-layer-repositories` | concluída (`2026-11-18-data-layer-repositories`) |
 | 5. Domínio de preços | `pricing-domain` | concluída (`2026-11-18-pricing-domain`) |
 | 6. Camada HTTP e services | `http-layer-services` | concluída (`2026-11-19-http-layer-services`) |
-| 7. TypeScript estrito | `typescript-strict` | concluída (change `typescript-strict`, a arquivar) |
+| 7. TypeScript estrito | `typescript-strict` | concluída (`2026-11-19-typescript-strict`) |
 | 8. Limpeza final | `refactor-cleanup` | pendente |
