@@ -521,7 +521,7 @@ recomendação estão listadas.
 
 ## Etapa 8: Limpeza final (concluída)
 
-- **Change sugerida:** `refactor-cleanup`
+- **Change sugerida:** `refactor-cleanup` (arquivada em `2026-11-19-refactor-cleanup`)
 - **Depende de:** etapa 7.
 - **Objetivo:** deixar o projeto coerente com a arquitetura nova.
 - **Escopo:** o código morto já tinha saído nas etapas 5 e 6 (o bloco comentado do `DELETE`, o `formata_moeda`,
@@ -597,4 +597,4 @@ Verificados em 2026-11-18. A etapa correspondente deve revalidar antes de decidi
 | 5. Domínio de preços | `pricing-domain` | concluída (`2026-11-18-pricing-domain`) |
 | 6. Camada HTTP e services | `http-layer-services` | concluída (`2026-11-19-http-layer-services`) |
 | 7. TypeScript estrito | `typescript-strict` | concluída (`2026-11-19-typescript-strict`) |
-| 8. Limpeza final | `refactor-cleanup` | concluída (change `refactor-cleanup`, a arquivar) |
+| 8. Limpeza final | `refactor-cleanup` | concluída (`2026-11-19-refactor-cleanup`) |
