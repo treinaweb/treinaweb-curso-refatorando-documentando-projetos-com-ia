@@ -12,6 +12,11 @@ Node 24 + Express 5 + SQLite (`better-sqlite3`, sem ORM, atrás de repositories 
   Apagar `loja.db` zera os dados: **pergunte antes de apagar**.
 - **Testes:** `npm test` (Vitest + supertest), `npm run typecheck` (`tsc --noEmit` do editor e do build; o Vitest não checa tipos) e
   `npm run test:coverage`. Exigem Node >= 24.11 (o `.nvmrc` atende). Rode `npm test` antes e depois de qualquer mudança.
+- **Formatação:** `npm run format` (Prettier: sem ponto e vírgula, aspas simples, `trailingComma: 'all'`, 120
+  colunas, só `.ts`/`.mts`/`.mjs`; veja `.prettierignore`) e `npm run format:check`, que deve passar junto com os testes.
+- **Sem ESLint, por ora:** o `typescript-eslint` não carrega com o TypeScript 7 (a montagem lado a lado com o TS 6
+  foi testada na etapa 7 e tomou o binário `tsc`). Fica adiado até o `typescript-eslint` suportar o TS 7 estável.
+  Até lá, "sem `as` nem `any` em `src/`" é conferido por `grep` e revisão.
   - São **testes de caracterização**: registram o comportamento HTTP atual (status, corpo inteiro, efeitos no estoque
     e nos valores gravados). Testam só pelo HTTP. Os `test/*.test.ts` importam só de `./helpers`; não importe `services`,
     `domain` nem `db` neles. Só `test/helpers.ts` e `test/setup.ts` montam o app (`createApp` + `abrirBanco`): cada arquivo roda

@@ -40,6 +40,8 @@ Requer Node 24.11 ou mais recente.
 npm test               # testes (Vitest + supertest), cada arquivo com banco temporário próprio
 npm run typecheck      # checagem de tipos do código e dos testes (tsc --noEmit)
 npm run test:coverage  # testes com relatório de cobertura
+npm run format         # formata o código com o Prettier
+npm run format:check   # confere a formatação sem alterar arquivos
 ```
 
 Os testes ficam em `test/` e registram o comportamento atual da API, inclusive as divergências

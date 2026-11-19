@@ -1,0 +1,11 @@
+# Prettier so formata o codigo (.ts, .mts, .mjs); documentacao e dados ficam como estao.
+dist/
+coverage/
+node_modules/
+openspec/
+docs/
+*.md
+*.yaml
+*.yml
+*.json
+*.db
